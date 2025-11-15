@@ -1,24 +1,32 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import pickle
 from scipy.stats import poisson
 
-# ----------------------------
-# Load your pre-trained assets
-# ----------------------------
-import pickle
+st.set_page_config(page_title="Premier League Predictor", layout="wide")
 
-pipe_result_final = pickle.load(open("pipe_result_final.pkl", "rb"))
-poisson_model     = pickle.load(open("poisson_model.pkl", "rb"))
-long_df           = pickle.load(open("long_df.pkl", "rb"))
-stats             = pickle.load(open("stats.pkl", "rb"))
-rho_hat           = pickle.load(open("rho_hat.pkl", "rb"))
 
-# ----------------------------
-# HELPER FUNCTIONS
-# ----------------------------
+# =========================================================
+#             LOAD MODELS & DATA (WITH CACHING)
+# =========================================================
+@st.cache_resource
+def load_pickle(file_path):
+    with open(file_path, "rb") as f:
+        return pickle.load(f)
 
-# ==== Expected goals from Poisson model ====
+
+pipe_result_final = load_pickle("pipe_result_final.pkl")
+poisson_model = load_pickle("poisson_model.pkl")
+long_df = load_pickle("long_df.pkl")
+stats = load_pickle("stats.pkl")
+rho_hat = load_pickle("rho_hat.pkl")
+
+
+# =========================================================
+#                  HELPER FUNCTIONS
+# =========================================================
+
 def get_expected_goals_poisson(home_team, away_team):
     pred_df = pd.DataFrame({
         "team": [home_team, away_team],
@@ -29,7 +37,6 @@ def get_expected_goals_poisson(home_team, away_team):
     return float(lam.iloc[0]), float(lam.iloc[1])
 
 
-# ==== Poisson score matrix ====
 def poisson_score_matrix(home_team, away_team, max_goals=6):
     lam_home, lam_away = get_expected_goals_poisson(home_team, away_team)
     home_goals = np.arange(0, max_goals + 1)
@@ -39,10 +46,9 @@ def poisson_score_matrix(home_team, away_team, max_goals=6):
     return home_goals, away_goals, P, lam_home, lam_away
 
 
-# ==== Poisson match markets ====
 def poisson_match_markets(home_team, away_team, max_goals=6):
     hg, ag, P, lam_h, lam_a = poisson_score_matrix(home_team, away_team)
-    total_goals = hg[:, None] + ag[None, :]
+    total = hg[:, None] + ag[None, :]
 
     return {
         "lambda_home": lam_h,
@@ -50,37 +56,36 @@ def poisson_match_markets(home_team, away_team, max_goals=6):
         "P_home": float(np.tril(P, -1).sum()),
         "P_draw": float(np.trace(P)),
         "P_away": float(np.triu(P, 1).sum()),
-        "P_over_1_5": float(P[total_goals >= 2].sum()),
-        "P_over_2_5": float(P[total_goals >= 3].sum()),
-        "P_over_3_5": float(P[total_goals >= 4].sum()),
-        "P_BTTS": float(P[(hg[:, None] > 0) & (ag[None, :] > 0)].sum())
+        "P_over_1_5": float(P[total >= 2].sum()),
+        "P_over_2_5": float(P[total >= 3].sum()),
+        "P_over_3_5": float(P[total >= 4].sum()),
+        "P_BTTS": float(P[(hg[:, None] > 0) & (ag[None, :] > 0)].sum()),
     }
 
 
-# ==== Dixon–Coles tau adjustment ====
 def dixon_coles_tau(hg, ag, lam_h, lam_a, rho):
     if hg == 0 and ag == 0:
-        return 1 - lam_h * lam_a * rho
-    if hg == 0 and ag == 1:
+        return 1 - (lam_h * lam_a * rho)
+    elif hg == 0 and ag == 1:
         return 1 + lam_a * rho
-    if hg == 1 and ag == 0:
+    elif hg == 1 and ag == 0:
         return 1 + lam_h * rho
-    if hg == 1 and ag == 1:
+    elif hg == 1 and ag == 1:
         return 1 - rho
-    return 1.0
+    else:
+        return 1.0
 
 
-# ==== Dixon–Coles match markets ====
 def dixon_coles_match_markets(home_team, away_team, rho, max_goals=6):
     hg, ag, P, lam_h, lam_a = poisson_score_matrix(home_team, away_team)
 
+    # apply tau adjustments
     for i, h in enumerate(hg):
         for j, a in enumerate(ag):
-            tau = dixon_coles_tau(h, a, lam_h, lam_a, rho)
-            P[i, j] *= tau
+            P[i, j] *= dixon_coles_tau(h, a, lam_h, lam_a, rho)
 
     P /= P.sum()
-    total_goals = hg[:, None] + ag[None, :]
+    total = hg[:, None] + ag[None, :]
 
     return {
         "lambda_home": lam_h,
@@ -88,77 +93,77 @@ def dixon_coles_match_markets(home_team, away_team, rho, max_goals=6):
         "P_home": float(np.tril(P, -1).sum()),
         "P_draw": float(np.trace(P)),
         "P_away": float(np.triu(P, 1).sum()),
-        "P_over_1_5": float(P[total_goals >= 2].sum()),
-        "P_over_2_5": float(P[total_goals >= 3].sum()),
-        "P_over_3_5": float(P[total_goals >= 4].sum()),
-        "P_BTTS": float(P[(hg[:, None] > 0) & (ag[None, :] > 0)].sum())
+        "P_over_1_5": float(P[total >= 2].sum()),
+        "P_over_2_5": float(P[total >= 3].sum()),
+        "P_over_3_5": float(P[total >= 4].sum()),
+        "P_BTTS": float(P[(hg[:, None] > 0) & (ag[None, :] > 0)].sum()),
     }
 
 
-# ==== Logistic feature builder ====
 def build_feature_row_for_match(home_team, away_team):
-    home_row = stats[stats['Squad'] == home_team].iloc[0]
-    away_row = stats[stats['Squad'] == away_team].iloc[0]
 
-    home_Att = home_row['Home_xG'] / home_row['Home_MP']
-    home_Def = home_row['Home_xGA'] / home_row['Home_MP']
-    away_Att = away_row['Away_xG'] / away_row['Away_MP']
-    away_Def = away_row['Away_xGA'] / away_row['Away_MP']
+    home_row = stats[stats["Squad"] == home_team].iloc[0]
+    away_row = stats[stats["Squad"] == away_team].iloc[0]
 
-    # rolling windows
-    home_lf = long_df[long_df['team'] == home_team].tail(1)
-    away_lf = long_df[long_df['team'] == away_team].tail(1)
+    # season xG attack/defence
+    home_Att = home_row["Home_xG"] / home_row["Home_MP"]
+    home_Def = home_row["Home_xGA"] / home_row["Home_MP"]
+    away_Att = away_row["Away_xG"] / away_row["Away_MP"]
+    away_Def = away_row["Away_xGA"] / away_row["Away_MP"]
+
+    home_lf = long_df[long_df["team"] == home_team].tail(1)
+    away_lf = long_df[long_df["team"] == away_team].tail(1)
 
     features = {
-        'home_Att': home_Att,
-        'home_Def': home_Def,
-        'away_Att': away_Att,
-        'away_Def': away_Def,
-        'strength_diff': home_Att - away_Att,
-        'defense_diff': away_Def - home_Def,
-        'balance_index': (home_Att - away_Att) - (away_Def - home_Def),
-        'attack_defense_ratio': home_Att / (away_Def + 1e-6),
-        'home_rolling_points': float(home_lf['rolling_points']),
-        'home_rolling_xG_for': float(home_lf['rolling_xG_for']),
-        'home_rolling_xG_against': float(home_lf['rolling_xG_against']),
-        'home_rolling_goals_for': float(home_lf['rolling_goals_for']),
-        'home_rolling_goals_against': float(home_lf['rolling_goals_against']),
-        'home_rolling_GD': float(home_lf['rolling_GD']),
-        'away_rolling_points': float(away_lf['rolling_points']),
-        'away_rolling_xG_for': float(away_lf['rolling_xG_for']),
-        'away_rolling_xG_against': float(away_lf['rolling_xG_against']),
-        'away_rolling_goals_for': float(away_lf['rolling_goals_for']),
-        'away_rolling_goals_against': float(away_lf['rolling_goals_against']),
-        'away_rolling_GD': float(away_lf['rolling_GD']),
+        "home_Att": home_Att,
+        "home_Def": home_Def,
+        "away_Att": away_Att,
+        "away_Def": away_Def,
+        "strength_diff": home_Att - away_Att,
+        "defense_diff": away_Def - home_Def,
+        "balance_index": (home_Att - away_Att) - (away_Def - home_Def),
+        "attack_defense_ratio": home_Att / (away_Def + 1e-6),
+        "home_rolling_points": float(home_lf["rolling_points"]),
+        "home_rolling_xG_for": float(home_lf["rolling_xG_for"]),
+        "home_rolling_xG_against": float(home_lf["rolling_xG_against"]),
+        "home_rolling_goals_for": float(home_lf["rolling_goals_for"]),
+        "home_rolling_goals_against": float(home_lf["rolling_goals_against"]),
+        "home_rolling_GD": float(home_lf["rolling_GD"]),
+        "away_rolling_points": float(away_lf["rolling_points"]),
+        "away_rolling_xG_for": float(away_lf["rolling_xG_for"]),
+        "away_rolling_xG_against": float(away_lf["rolling_xG_against"]),
+        "away_rolling_goals_for": float(away_lf["rolling_goals_for"]),
+        "away_rolling_goals_against": float(away_lf["rolling_goals_against"]),
+        "away_rolling_GD": float(away_lf["rolling_GD"]),
     }
 
-    # rolling diffs
-    features['rolling_points_diff'] = (
-        features['home_rolling_points'] - features['away_rolling_points']
+    features["rolling_points_diff"] = (
+        features["home_rolling_points"] - features["away_rolling_points"]
     )
-    features['rolling_xG_diff'] = (
-        features['home_rolling_xG_for'] - features['away_rolling_xG_for']
+    features["rolling_xG_diff"] = (
+        features["home_rolling_xG_for"] - features["away_rolling_xG_for"]
     )
-    features['rolling_xGA_diff'] = (
-        features['home_rolling_xG_against'] - features['away_rolling_xG_against']
+    features["rolling_xGA_diff"] = (
+        features["home_rolling_xG_against"] - features["away_rolling_xG_against"]
     )
-    features['rolling_GD_diff'] = (
-        features['home_rolling_GD'] - features['away_rolling_GD']
+    features["rolling_GD_diff"] = (
+        features["home_rolling_GD"] - features["away_rolling_GD"]
     )
 
     return pd.DataFrame([features])
 
 
-# ----------------------------
-# STREAMLIT PAGE
-# ----------------------------
+# =========================================================
+#                    STREAMLIT UI
+# =========================================================
 
-st.title("Premier League Match Predictor")
-st.write("Logistic Model • Poisson • Dixon–Coles")
+st.title("⚽ Premier League Match Predictor")
+st.write("Three-model prediction engine: Logistic • Poisson • Dixon–Coles")
+st.markdown("---")
 
 teams = sorted(stats["Squad"].unique())
-
 col1, col2 = st.columns(2)
+
 home_team = col1.selectbox("Home Team", teams)
 away_team = col2.selectbox("Away Team", teams)
 
@@ -166,27 +171,27 @@ if home_team == away_team:
     st.warning("Home and away teams must be different.")
     st.stop()
 
-st.header(f"{home_team} vs {away_team}")
+st.header(f"### {home_team} vs {away_team}")
+st.markdown("---")
 
-# ==========================================================
-# LOGISTIC PREDICTION
-# ==========================================================
-
-st.subheader("📊 Logistic Model (Form + Rolling Stats + Season Strength)")
+# =========================================================
+# LOGISTIC MODEL
+# =========================================================
+st.subheader("📊 Logistic Model Prediction")
 X_row = build_feature_row_for_match(home_team, away_team)
-probs = pipe_result_final.predict_proba(X_row)[0]
+log_probs = pipe_result_final.predict_proba(X_row)[0]
 
 st.write({
-    "Home Win": float(probs[2]),
-    "Draw": float(probs[1]),
-    "Away Win": float(probs[0])
+    "Home Win": float(log_probs[2]),
+    "Draw": float(log_probs[1]),
+    "Away Win": float(log_probs[0])
 })
 
-# ==========================================================
-# POISSON
-# ==========================================================
+# =========================================================
+# POISSON MODEL
+# =========================================================
+st.subheader("📈 Poisson Model (Expected Goals)")
 
-st.subheader("📈 Poisson Model (Expected Goals Model)")
 pm = poisson_match_markets(home_team, away_team)
 
 st.write({
@@ -198,14 +203,14 @@ st.write({
     "Over 1.5": pm["P_over_1_5"],
     "Over 2.5": pm["P_over_2_5"],
     "Over 3.5": pm["P_over_3_5"],
-    "BTTS": pm["P_BTTS"]
+    "BTTS": pm["P_BTTS"],
 })
 
-# ==========================================================
+# =========================================================
 # DIXON–COLES
-# ==========================================================
+# =========================================================
+st.subheader("⚡ Dixon–Coles Adjusted Poisson")
 
-st.subheader("⚡ Dixon–Coles Adjusted Poisson (Improved Low-Score Calibration)")
 dc = dixon_coles_match_markets(home_team, away_team, rho_hat)
 
 st.write({
@@ -215,5 +220,5 @@ st.write({
     "Over 1.5": dc["P_over_1_5"],
     "Over 2.5": dc["P_over_2_5"],
     "Over 3.5": dc["P_over_3_5"],
-    "BTTS": dc["P_BTTS"]
+    "BTTS": dc["P_BTTS"],
 })
