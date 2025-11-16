@@ -31,19 +31,26 @@ CUSTOM_CSS = """
         color: #F9FAFB;
         border: 1px solid #111827;
     }
-    .model-card h3 {
+    .model-card h4 {
         margin-top: 0;
-        margin-bottom: 4px;
+        margin-bottom: 6px;
     }
-    .model-meta {
-        font-size: 12px;
+    .model-metric-row {
+        display: flex;
+        justify-content: space-between;
+        font-size: 14px;
+        margin: 2px 0;
+    }
+    .model-metric-label {
         color: #9CA3AF;
-        margin-bottom: 12px;
+    }
+    .model-metric-value {
+        font-weight: 600;
     }
     .footer-note {
+        margin-top: 16px;
         font-size: 11px;
         color: #6B7280;
-        margin-top: 12px;
     }
 </style>
 """
@@ -52,6 +59,7 @@ st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 # ==============================
 #       LOAD PICKLES
 # ==============================
+@st.cache_data
 def load_pickle(path):
     with open(path, "rb") as f:
         return pickle.load(f)
@@ -62,12 +70,11 @@ long_df           = load_pickle("long_df.pkl")
 stats             = load_pickle("stats.pkl")
 rho_hat           = load_pickle("rho_hat.pkl")
 
-# normalise team names and position
+# Normalise team names & positions
 if "Squad" in stats.columns:
     stats["Squad"] = stats["Squad"].astype(str).str.strip()
 if "Position" in stats.columns:
     stats["Position"] = stats["Position"].astype(str).str.strip()
-
 
 # ==============================
 #     HELPER FUNCTIONS
@@ -76,7 +83,11 @@ def pct(x, decimals=1):
     return f"{x * 100:.{decimals}f}%"
 
 
-def get_expected_goals_poisson(home_team, away_team):
+def get_expected_goals_poisson(home_team, away_team, context_adj: float = 0.0):
+    """
+    Expected goals (λ values) from Poisson model, adjusted by context slider.
+    context_adj > 0 slightly boosts home xG and reduces away xG, and vice versa.
+    """
     pred_df = pd.DataFrame({
         "team":     [home_team, away_team],
         "opponent": [away_team, home_team],
@@ -85,11 +96,17 @@ def get_expected_goals_poisson(home_team, away_team):
     lam = poisson_model.predict(pred_df)
     lam_home = float(lam.iloc[0])
     lam_away = float(lam.iloc[1])
-    return lam_home, lam_away
+
+    lam_home_adj = max(lam_home * (1 + context_adj), 0.01)
+    lam_away_adj = max(lam_away * (1 - context_adj), 0.01)
+
+    return lam_home_adj, lam_away_adj, lam_home, lam_away
 
 
-def poisson_score_matrix(home_team, away_team, max_goals=6):
-    lam_h, lam_a = get_expected_goals_poisson(home_team, away_team)
+def poisson_score_matrix(home_team, away_team, max_goals=6, context_adj: float = 0.0):
+    lam_h, lam_a, lam_h_base, lam_a_base = get_expected_goals_poisson(
+        home_team, away_team, context_adj=context_adj
+    )
 
     hg = np.arange(0, max_goals + 1)
     ag = np.arange(0, max_goals + 1)
@@ -100,16 +117,20 @@ def poisson_score_matrix(home_team, away_team, max_goals=6):
             P[i, j] = poisson.pmf(h, lam_h) * poisson.pmf(a, lam_a)
 
     P /= P.sum()
-    return hg, ag, P, lam_h, lam_a
+    return hg, ag, P, lam_h, lam_a, lam_h_base, lam_a_base
 
 
-def poisson_match_markets(home_team, away_team, max_goals=6):
-    hg, ag, P, lam_h, lam_a = poisson_score_matrix(home_team, away_team, max_goals=max_goals)
+def poisson_match_markets(home_team, away_team, max_goals=6, context_adj: float = 0.0):
+    hg, ag, P, lam_h, lam_a, lam_h_base, lam_a_base = poisson_score_matrix(
+        home_team, away_team, max_goals=max_goals, context_adj=context_adj
+    )
     total = hg[:, None] + ag[None, :]
 
-    return {
+    metrics = {
         "lambda_home": lam_h,
         "lambda_away": lam_a,
+        "lambda_home_base": lam_h_base,
+        "lambda_away_base": lam_a_base,
         "P_home": float(np.tril(P, -1).sum()),
         "P_draw": float(np.trace(P)),
         "P_away": float(np.triu(P, 1).sum()),
@@ -118,6 +139,7 @@ def poisson_match_markets(home_team, away_team, max_goals=6):
         "P_over_3_5": float(P[total >= 4].sum()),
         "P_BTTS": float(P[(hg[:, None] > 0) & (ag[None, :] > 0)].sum()),
     }
+    return metrics
 
 
 def dixon_coles_tau(hg, ag, lam_h, lam_a, rho):
@@ -132,8 +154,10 @@ def dixon_coles_tau(hg, ag, lam_h, lam_a, rho):
     return 1.0
 
 
-def dixon_coles_match_markets(home_team, away_team, rho, max_goals=6):
-    hg, ag, P, lam_h, lam_a = poisson_score_matrix(home_team, away_team, max_goals=max_goals)
+def dixon_coles_match_markets(home_team, away_team, rho, max_goals=6, context_adj: float = 0.0):
+    hg, ag, P, lam_h, lam_a, lam_h_base, lam_a_base = poisson_score_matrix(
+        home_team, away_team, max_goals=max_goals, context_adj=context_adj
+    )
 
     for i, h in enumerate(hg):
         for j, a in enumerate(ag):
@@ -142,9 +166,11 @@ def dixon_coles_match_markets(home_team, away_team, rho, max_goals=6):
     P /= P.sum()
     total = hg[:, None] + ag[None, :]
 
-    return {
+    metrics = {
         "lambda_home": lam_h,
         "lambda_away": lam_a,
+        "lambda_home_base": lam_h_base,
+        "lambda_away_base": lam_a_base,
         "P_home": float(np.tril(P, -1).sum()),
         "P_draw": float(np.trace(P)),
         "P_away": float(np.triu(P, 1).sum()),
@@ -153,20 +179,15 @@ def dixon_coles_match_markets(home_team, away_team, rho, max_goals=6):
         "P_over_3_5": float(P[total >= 4].sum()),
         "P_BTTS": float(P[(hg[:, None] > 0) & (ag[None, :] > 0)].sum()),
     }
+    return metrics
 
 
 def build_feature_row_for_match(home_team, away_team):
     """
-    Build a single feature row for the logistic model, matching the feature set
-    used during training in weekly_update.py.
-
-    Features:
-      - home_Att, home_Def, away_Att, away_Def
-      - strength_diff, defense_diff, balance_index, attack_defense_ratio
-      - rolling_points_diff, rolling_xG_diff, rolling_xGA_diff, rolling_GD_diff
-      - finishing_overperf_diff
+    Build the logistic model feature row, matching weekly_update.py.
+    Logistic model remains UNADJUSTED by sliders (baseline).
     """
-    # Season-long attack/defence strength from stats
+    # Season-long attack / defence from stats
     home_row = stats[stats["Squad"] == home_team].iloc[0]
     away_row = stats[stats["Squad"] == away_team].iloc[0]
 
@@ -175,30 +196,29 @@ def build_feature_row_for_match(home_team, away_team):
     away_Att = away_row["Away_xG"] / away_row["Away_MP"]
     away_Def = away_row["Away_xGA"] / away_row["Away_MP"]
 
-    # Latest rolling form from long_df (5-match window)
+    # Latest rolling form from long_df (5-game window)
     home_lf = long_df[long_df["team"] == home_team].sort_values("Date").tail(1)
     away_lf = long_df[long_df["team"] == away_team].sort_values("Date").tail(1)
 
-    # Safely extract rolling metrics (default to 0 if unavailable)
-    def get_latest(df_team, col):
-        if col not in df_team.columns or df_team.empty:
+    def _get_latest(df_team, col):
+        if df_team.empty or col not in df_team.columns:
             return 0.0
         return float(df_team[col].iloc[0])
 
-    home_points = get_latest(home_lf, "rolling_points")
-    away_points = get_latest(away_lf, "rolling_points")
+    home_points = _get_latest(home_lf, "rolling_points")
+    away_points = _get_latest(away_lf, "rolling_points")
 
-    home_xg_for = get_latest(home_lf, "rolling_xg_for")
-    away_xg_for = get_latest(away_lf, "rolling_xg_for")
+    home_xg_for = _get_latest(home_lf, "rolling_xg_for")
+    away_xg_for = _get_latest(away_lf, "rolling_xg_for")
 
-    home_xg_against = get_latest(home_lf, "rolling_xg_against")
-    away_xg_against = get_latest(away_lf, "rolling_xg_against")
+    home_xg_against = _get_latest(home_lf, "rolling_xg_against")
+    away_xg_against = _get_latest(away_lf, "rolling_xg_against")
 
-    home_gd = get_latest(home_lf, "rolling_GD")
-    away_gd = get_latest(away_lf, "rolling_GD")
+    home_gd = _get_latest(home_lf, "rolling_GD")
+    away_gd = _get_latest(away_lf, "rolling_GD")
 
-    home_fin_over = get_latest(home_lf, "rolling_finishing_overperf")
-    away_fin_over = get_latest(away_lf, "rolling_finishing_overperf")
+    home_fin_over = _get_latest(home_lf, "rolling_finishing_overperf")
+    away_fin_over = _get_latest(away_lf, "rolling_finishing_overperf")
 
     feats = {
         "home_Att": home_Att,
@@ -219,33 +239,24 @@ def build_feature_row_for_match(home_team, away_team):
     return pd.DataFrame([feats])
 
 
-def get_team_position(team_name: str) -> str:
-    row = stats[stats["Squad"] == team_name]
-    if "Position" in stats.columns and not row.empty:
-        return str(row["Position"].iloc[0])
-    return "–"
+def get_team_position(team):
+    row = stats[stats["Squad"] == team]
+    return row["Position"].iloc[0] if not row.empty else "–"
 
 
-def last_5_results(team_name: str):
-    # Newest first, then reversed so we display oldest → latest (left → right)
-    df_team = long_df[long_df["team"] == team_name].sort_values("Date", ascending=False).head(5)
-    res_letters = []
-    res_icons = []
+def last_5_results(team):
+    """Return form oldest → latest."""
+    df_team = long_df[long_df["team"] == team].sort_values("Date").tail(5)
+    letters, icons = [], []
     for _, r in df_team.iterrows():
-        gf = r["goals_for"]
-        ga = r["goals_against"]
+        gf, ga = r["goals_for"], r["goals_against"]
         if gf > ga:
-            res_letters.append("W")
-            res_icons.append("🟩")
+            letters.append("W"); icons.append("🟩")
         elif gf == ga:
-            res_letters.append("D")
-            res_icons.append("🟨")
+            letters.append("D"); icons.append("🟨")
         else:
-            res_letters.append("L")
-            res_icons.append("🟥")
-    # Make sure the visual is oldest → latest
-    return "".join(res_letters[::-1]), "".join(res_icons[::-1])
-
+            letters.append("L"); icons.append("🟥")
+    return "".join(letters), "".join(icons)
 
 # ==============================
 #           SIDEBAR
@@ -253,147 +264,228 @@ def last_5_results(team_name: str):
 with st.sidebar:
     st.header("Match Setup")
     teams = sorted(stats["Squad"].unique())
-    home_team = st.selectbox("Home team", teams, key="home_team")
-    away_team = st.selectbox("Away team", teams, key="away_team")
+
+    home_team = st.selectbox("Home team", teams)
+    away_team = st.selectbox("Away team", teams)
 
     st.markdown("---")
-    st.caption("Tip: update the underlying CSVs weekly with new GW data, then retrain & re-export the models/pickles.")
 
+    advanced_mode = st.checkbox(
+        "Advanced adjustment mode",
+        value=False,
+        help="Enable more granular match context controls (injuries, morale, tactics).",
+    )
 
+    if not advanced_mode:
+        context_adj = st.slider(
+            "Context Adjustment (−3 = strong away edge, +3 = strong home edge)",
+            -3.0, 3.0, 0.0, 0.1,
+            help="Adjusts expected goals and Dixon–Coles probabilities only."
+        )
+    else:
+        st.subheader("Advanced Context Controls")
+
+        att_adj = st.slider(
+            "Attack Impact (Home attacking boost / Away penalty)",
+            -3.0, 3.0, 0.0, 0.1
+        )
+        def_adj = st.slider(
+            "Defensive Impact (Home defensive boost / Away vulnerability)",
+            -3.0, 3.0, 0.0, 0.1
+        )
+        morale_adj = st.slider(
+            "Morale / Momentum Shift (Psychological advantage)",
+            -3.0, 3.0, 0.0, 0.1
+        )
+
+        context_adj = (att_adj + def_adj + 0.5 * morale_adj) / 2.0
+
+    st.markdown(f"**Current adjustment:** `{context_adj:+.2f}`")
+    st.caption("Note: adjustments affect Poisson & Dixon–Coles models only (logistic stays baseline).")
+
+# ==============================
+#       MAIN AREA
+# ==============================
 if home_team == away_team:
-    st.warning("Home and away teams must be different.")
+    st.warning("Home and Away teams must be different.")
     st.stop()
 
-# ==============================
-#        MAIN TITLE
-# ==============================
-st.markdown(f"<div class='main-title'>{home_team} vs {away_team}</div>", unsafe_allow_html=True)
+st.markdown('<div class="main-title">Premier League Match Predictor</div>', unsafe_allow_html=True)
 st.markdown(
-    '<div class="sub-title">Logistic model · Poisson expected goals · Dixon–Coles adjustment</div>',
+    '<div class="sub-title">Poisson expected goals · Dixon–Coles correction · Logistic baseline</div>',
     unsafe_allow_html=True
 )
+st.markdown(f"### {home_team} vs {away_team}")
 st.markdown("---")
 
-# ---- core calculations
+# -----------------------
+# Logistic Model (baseline only)
+# -----------------------
 X_row = build_feature_row_for_match(home_team, away_team)
 log_probs = pipe_result_final.predict_proba(X_row)[0]
 classes = pipe_result_final.named_steps["clf"].classes_
-p_log = {cls: float(prob) for cls, prob in zip(classes, log_probs)}
+p_log = dict(zip(classes, log_probs))
 
-pm = poisson_match_markets(home_team, away_team)
-dc = dixon_coles_match_markets(home_team, away_team, rho_hat)
+# -----------------------
+# Poisson & Dixon–Coles (adjusted)
+# -----------------------
+pm      = poisson_match_markets(home_team, away_team, context_adj=context_adj)
+pm_base = poisson_match_markets(home_team, away_team)
+
+dc      = dixon_coles_match_markets(home_team, away_team, rho_hat, context_adj=context_adj)
+dc_base = dixon_coles_match_markets(home_team, away_team, rho_hat)
+
+home_adjustment_delta = (dc["P_home"] - dc_base["P_home"]) * 100
 
 # ==============================
 #  HEADLINE (DIXON–COLES)
 # ==============================
-st.subheader("Headline view (Dixon–Coles model)")
+st.subheader("Headline (Dixon–Coles adjusted)")
 
-hc1, hc2, hc3, hc4 = st.columns(4)
-hc1.metric("Home Win", pct(dc["P_home"]))
-hc2.metric("Draw", pct(dc["P_draw"]))
-hc3.metric("Away Win", pct(dc["P_away"]))
-hc4.metric("BTTS", pct(dc["P_BTTS"]))
+colA, colB, colC, colD = st.columns(4)
+colA.metric("Home Win", pct(dc["P_home"]))
+colB.metric("Draw", pct(dc["P_draw"]))
+colC.metric("Away Win", pct(dc["P_away"]))
+colD.metric("BTTS", pct(dc["P_BTTS"]))
 
-st.caption("Dixon–Coles: Poisson-based, calibrated for low-scoring match dependence (0–0, 1–0, 1–1 etc.).")
-st.markdown("---")
+st.caption("Dixon–Coles adjusts Poisson scorelines for realistic low-scoring match dependencies.")
 
 # ==============================
-#  MODEL CARDS
+#     MODEL CARDS
 # ==============================
+c1, c2, c3 = st.columns(3)
 
-# Logistic card
-st.markdown('<div class="model-card">', unsafe_allow_html=True)
-st.markdown("<h3>📊 Logistic Model</h3>", unsafe_allow_html=True)
-st.markdown(
-    '<div class="model-meta">'
-    'Directly predicts Home / Draw / Away using team strength, home/away splits, and 5-game rolling form.'
-    '</div>',
-    unsafe_allow_html=True
-)
+# Logistic model card (baseline)
+with c1:
+    st.markdown('<div class="model-card">', unsafe_allow_html=True)
+    st.markdown("<h4>Logistic Model (Baseline)</h4>", unsafe_allow_html=True)
+    st.markdown(
+        f'<div class="model-metric-row"><span class="model-metric-label">Home Win</span>'
+        f'<span class="model-metric-value">{pct(p_log.get("H", 0.0))}</span></div>',
+        unsafe_allow_html=True
+    )
+    st.markdown(
+        f'<div class="model-metric-row"><span class="model-metric-label">Draw</span>'
+        f'<span class="model-metric-value">{pct(p_log.get("D", 0.0))}</span></div>',
+        unsafe_allow_html=True
+    )
+    st.markdown(
+        f'<div class="model-metric-row"><span class="model-metric-label">Away Win</span>'
+        f'<span class="model-metric-value">{pct(p_log.get("A", 0.0))}</span></div>',
+        unsafe_allow_html=True
+    )
+    st.markdown(
+        '<div class="sub-title" style="margin-top:8px;">'
+        'Trained on historical results using team strength and rolling form. '
+        'Unaffected by context sliders – this is your baseline view.'
+        '</div>',
+        unsafe_allow_html=True
+    )
+    st.markdown('</div>', unsafe_allow_html=True)
 
-lc1, lc2, lc3 = st.columns(3)
-lc1.metric("Home Win", pct(p_log.get("H", np.nan)))
-lc2.metric("Draw", pct(p_log.get("D", np.nan)))
-lc3.metric("Away Win", pct(p_log.get("A", np.nan)))
-st.markdown('</div>', unsafe_allow_html=True)
+# Poisson model card
+with c2:
+    st.markdown('<div class="model-card">', unsafe_allow_html=True)
+    st.markdown("<h4>Poisson Model (Adjusted)</h4>", unsafe_allow_html=True)
 
-# Poisson card
-st.markdown('<div class="model-card">', unsafe_allow_html=True)
-st.markdown("<h3>📈 Poisson Expected Goals Model</h3>", unsafe_allow_html=True)
-st.markdown(
-    '<div class="model-meta">'
-    'Estimates expected goals for each team, then derives result and goal-market probabilities assuming independent scoring.'
-    '</div>',
-    unsafe_allow_html=True
-)
+    st.markdown(
+        f'<div class="model-metric-row"><span class="model-metric-label">xG Home</span>'
+        f'<span class="model-metric-value">{pm["lambda_home"]:.2f}</span></div>',
+        unsafe_allow_html=True
+    )
+    st.markdown(
+        f'<div class="model-metric-row"><span class="model-metric-label">xG Away</span>'
+        f'<span class="model-metric-value">{pm["lambda_away"]:.2f}</span></div>',
+        unsafe_allow_html=True
+    )
 
-pc1, pc2, pc3, pc4 = st.columns(4)
-pc1.metric("xG Home", f"{pm['lambda_home']:.2f}")
-pc2.metric("xG Away", f"{pm['lambda_away']:.2f}")
-pc3.metric("Over 2.5", pct(pm["P_over_2_5"]))
-pc4.metric("BTTS", pct(pm["P_BTTS"]))
-
-poisson_df = pd.DataFrame({
-    "Outcome": ["Home win", "Draw", "Away win"],
-    "Poisson (Prob)": [pct(pm["P_home"]), pct(pm["P_draw"]), pct(pm["P_away"])]
-})
-st.table(poisson_df.style.hide(axis="index"))
-st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown(
+        f'<div class="model-metric-row"><span class="model-metric-label">Over 1.5</span>'
+        f'<span class="model-metric-value">{pct(pm["P_over_1_5"])}</span></div>',
+        unsafe_allow_html=True
+    )
+    st.markdown(
+        f'<div class="model-metric-row"><span class="model-metric-label">Over 2.5</span>'
+        f'<span class="model-metric-value">{pct(pm["P_over_2_5"])}</span></div>',
+        unsafe_allow_html=True
+    )
+    st.markdown(
+        f'<div class="model-metric-row"><span class="model-metric-label">Over 3.5</span>'
+        f'<span class="model-metric-value">{pct(pm["P_over_3_5"])}</span></div>',
+        unsafe_allow_html=True
+    )
+    st.markdown(
+        f'<div class="model-metric-row"><span class="model-metric-label">BTTS</span>'
+        f'<span class="model-metric-value">{pct(pm["P_BTTS"])}</span></div>',
+        unsafe_allow_html=True
+    )
+    st.markdown(
+        '<div class="sub-title" style="margin-top:8px;">'
+        'Uses expected goals (xG) for each side. Sliders nudge xG up/down to reflect match context.'
+        '</div>',
+        unsafe_allow_html=True
+    )
+    st.markdown('</div>', unsafe_allow_html=True)
 
 # Dixon–Coles card
-st.markdown('<div class="model-card">', unsafe_allow_html=True)
-st.markdown("<h3>⚡ Dixon–Coles Adjusted Poisson</h3>", unsafe_allow_html=True)
-st.markdown(
-    '<div class="model-meta">'
-    'Refines the Poisson model by adjusting for correlation in low-scoring matches, improving calibration for tight games and draws.'
-    '</div>',
-    unsafe_allow_html=True
-)
-
-dc1, dc2, dc3, dc4, dc5 = st.columns(5)
-dc1.metric("Home Win", pct(dc["P_home"]))
-dc2.metric("Draw", pct(dc["P_draw"]))
-dc3.metric("Away Win", pct(dc["P_away"]))
-dc4.metric("Over 2.5", pct(dc["P_over_2_5"]))
-dc5.metric("Over 1.5", pct(dc["P_over_1_5"]))
-
-dc_df = pd.DataFrame({
-    "Outcome": ["Home win", "Draw", "Away win"],
-    "Dixon–Coles (Prob)": [pct(dc["P_home"]), pct(dc["P_draw"]), pct(dc["P_away"])]
-})
-st.table(dc_df.style.hide(axis="index"))
-st.markdown('</div>', unsafe_allow_html=True)
+with c3:
+    st.markdown('<div class="model-card">', unsafe_allow_html=True)
+    st.markdown("<h4>Dixon–Coles Adjusted</h4>", unsafe_allow_html=True)
+    st.markdown(
+        f'<div class="model-metric-row"><span class="model-metric-label">Home Win</span>'
+        f'<span class="model-metric-value">{pct(dc["P_home"])}</span></div>',
+        unsafe_allow_html=True
+    )
+    st.markdown(
+        f'<div class="model-metric-row"><span class="model-metric-label">Draw</span>'
+        f'<span class="model-metric-value">{pct(dc["P_draw"])}</span></div>',
+        unsafe_allow_html=True
+    )
+    st.markdown(
+        f'<div class="model-metric-row"><span class="model-metric-label">Away Win</span>'
+        f'<span class="model-metric-value">{pct(dc["P_away"])}</span></div>',
+        unsafe_allow_html=True
+    )
+    st.markdown(
+        f'<div class="model-metric-row"><span class="model-metric-label">Over 2.5</span>'
+        f'<span class="model-metric-value">{pct(dc["P_over_2_5"])}</span></div>',
+        unsafe_allow_html=True
+    )
+    st.markdown(
+        f'<div class="sub-title" style="margin-top:8px;">'
+        f'Includes low-scoring dependency. Your context sliders changed the home win probability by '
+        f'<strong>{home_adjustment_delta:+.2f} percentage points</strong> '
+        f'vs the unadjusted Poisson/DC view.'
+        '</div>',
+        unsafe_allow_html=True
+    )
+    st.markdown('</div>', unsafe_allow_html=True)
 
 # ==============================
-#  TEAM FORM & LEAGUE POSITION
+#   TEAM FORM & POSITION + OVERPERFORMANCE
 # ==============================
-with st.expander("Team form & league position (last 5 matches)"):
-    home_form_letters, home_form_icons = last_5_results(home_team)
-    away_form_letters, away_form_icons = last_5_results(away_team)
+with st.expander("Team Form & League Position (last 5 matches)"):
+    col_h, col_a = st.columns(2)
 
-    table_df = pd.DataFrame([
-        {
-            "Team": home_team,
-            "Position": get_team_position(home_team),
-            "Last 5 (W/D/L)": " ".join(list(home_form_letters)),
-            "Form (old → recent)": " ".join(list(home_form_icons)),
-        },
-        {
-            "Team": away_team,
-            "Position": get_team_position(away_team),
-            "Last 5 (W/D/L)": " ".join(list(away_form_letters)),
-            "Form (old → recent)": " ".join(list(away_form_icons)),
-        }
-    ])
+    h_letters, h_icons = last_5_results(home_team)
+    a_letters, a_icons = last_5_results(away_team)
 
-    st.table(table_df)
+    with col_h:
+        st.markdown(f"**{home_team}**")
+        st.markdown(f"Position: **{get_team_position(home_team)}**")
+        st.markdown(f"Form (old → new): {h_icons}  ({h_letters})")
 
-    # Finishing over/under performance (last 5)
+    with col_a:
+        st.markdown(f"**{away_team}**")
+        st.markdown(f"Position: **{get_team_position(away_team)}**")
+        st.markdown(f"Form (old → new): {a_icons}  ({a_letters})")
+
+    # Finishing over/under performance (last 5 matches)
     home_lf = long_df[long_df["team"] == home_team].sort_values("Date").tail(1)
     away_lf = long_df[long_df["team"] == away_team].sort_values("Date").tail(1)
 
     def _get_latest(df_team, col):
-        if col not in df_team.columns or df_team.empty:
+        if df_team.empty or col not in df_team.columns:
             return 0.0
         return float(df_team[col].iloc[0])
 
@@ -403,7 +495,7 @@ with st.expander("Team form & league position (last 5 matches)"):
     home_def_5 = _get_latest(home_lf, "rolling_def_overperf")
     away_def_5 = _get_latest(away_lf, "rolling_def_overperf")
 
-    fin_table = pd.DataFrame([
+    fin_df = pd.DataFrame([
         {
             "Team": home_team,
             "Finishing (G - xG, last 5)": f"{home_fin_5:+.2f}",
@@ -413,22 +505,20 @@ with st.expander("Team form & league position (last 5 matches)"):
             "Team": away_team,
             "Finishing (G - xG, last 5)": f"{away_fin_5:+.2f}",
             "Defence (xGA - GA, last 5)": f"{away_def_5:+.2f}",
-        }
+        },
     ])
 
     st.markdown("**Finishing over/under performance (last 5 matches)**")
     st.caption(
         "Positive finishing = scoring more than expected from xG. "
         "Negative finishing = scoring less than expected. "
-        "For defence, negative values mean conceding fewer goals than xGA (good GK/defence)."
+        "For defence, negative values mean conceding fewer goals than xGA (good GK/defence or luck)."
     )
-    st.table(fin_table)
+    st.table(fin_df)
 
 st.markdown(
     '<div class="footer-note">'
-    'Probabilities are model-based estimates only. Underlying data and models update as new GWs are added.'
-    '</div>',
+    'Probabilities are model-based estimates only. Models update weekly as new matches are added.</div>',
     unsafe_allow_html=True
 )
-
 
