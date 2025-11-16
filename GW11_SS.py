@@ -233,11 +233,10 @@ feats["finishing_overperf_diff"] = (
     feats["home_finishing_overperf"] - feats["away_finishing_overperf"]
 )
 
-
-    feats["rolling_points_diff"] = feats["home_rolling_points"] - feats["away_rolling_points"]
-    feats["rolling_xG_diff"]     = feats["home_rolling_xG_for"] - feats["away_rolling_xG_for"]
-    feats["rolling_xGA_diff"]    = feats["home_rolling_xG_against"] - feats["away_rolling_xG_against"]
-    feats["rolling_GD_diff"]     = feats["home_rolling_GD"] - feats["away_rolling_GD"]
+feats["rolling_points_diff"] = feats["home_rolling_points"] - feats["away_rolling_points"]
+feats["rolling_xG_diff"]     = feats["home_rolling_xG_for"] - feats["away_rolling_xG_for"]
+feats["rolling_xGA_diff"]    = feats["home_rolling_xG_against"] - feats["away_rolling_xG_against"]
+feats["rolling_GD_diff"]     = feats["home_rolling_GD"] - feats["away_rolling_GD"]
 
     return pd.DataFrame([feats])
 
