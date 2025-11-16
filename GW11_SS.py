@@ -208,6 +208,32 @@ def build_feature_row_for_match(home_team, away_team):
         "away_rolling_GD": float(away_lf["rolling_GD"]),
     }
 
+    # ----------------------
+# Finishing Overperformance Metrics
+# ----------------------
+
+# Attack finishing
+feats["home_finishing_overperf"] = (
+    feats["home_rolling_goals_for"] - feats["home_rolling_xG_for"]
+)
+feats["away_finishing_overperf"] = (
+    feats["away_rolling_goals_for"] - feats["away_rolling_xG_for"]
+)
+
+# Defensive overperformance
+feats["home_def_overperf"] = (
+    feats["home_rolling_xG_against"] - feats["home_rolling_goals_against"]
+)
+feats["away_def_overperf"] = (
+    feats["away_rolling_xG_against"] - feats["away_rolling_goals_against"]
+)
+
+# Net finishing overperformance difference
+feats["finishing_overperf_diff"] = (
+    feats["home_finishing_overperf"] - feats["away_finishing_overperf"]
+)
+
+
     feats["rolling_points_diff"] = feats["home_rolling_points"] - feats["away_rolling_points"]
     feats["rolling_xG_diff"]     = feats["home_rolling_xG_for"] - feats["away_rolling_xG_for"]
     feats["rolling_xGA_diff"]    = feats["home_rolling_xG_against"] - feats["away_rolling_xG_against"]
