@@ -48,18 +48,19 @@ CUSTOM_CSS = """
         font-weight: 600;
     }
     .footer-note {
-        margin-top: 16px;
+        margin-top: 20px;
         font-size: 11px;
         color: #6B7280;
+        text-align: left;
     }
 </style>
 """
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
 # ==============================
-#       LOAD PICKLES
+#       LOAD OBJECTS
 # ==============================
-@st.cache_data
+@st.cache_resource
 def load_pickle(path):
     with open(path, "rb") as f:
         return pickle.load(f)
@@ -85,22 +86,22 @@ def pct(x, decimals=1):
 
 def get_expected_goals_poisson(home_team, away_team, context_adj: float = 0.0):
     """
-    Expected goals (λ values) from Poisson model, adjusted by context slider.
-    context_adj > 0 slightly boosts home xG and reduces away xG, and vice versa.
+    Expected goals from Poisson model, adjusted by context.
+    context_adj > 0 => boost home xG, reduce away xG (and vice versa).
     """
-    pred_df = pd.DataFrame({
+    base_df = pd.DataFrame({
         "team":     [home_team, away_team],
         "opponent": [away_team, home_team],
         "is_home":  [1, 0],
     })
-    lam = poisson_model.predict(pred_df)
-    lam_home = float(lam.iloc[0])
-    lam_away = float(lam.iloc[1])
+    lam = poisson_model.predict(base_df)
+    lam_home_base = float(lam.iloc[0])
+    lam_away_base = float(lam.iloc[1])
 
-    lam_home_adj = max(lam_home * (1 + context_adj), 0.01)
-    lam_away_adj = max(lam_away * (1 - context_adj), 0.01)
+    lam_home = max(lam_home_base * (1 + context_adj), 0.01)
+    lam_away = max(lam_away_base * (1 - context_adj), 0.01)
 
-    return lam_home_adj, lam_away_adj, lam_home, lam_away
+    return lam_home, lam_away, lam_home_base, lam_away_base
 
 
 def poisson_score_matrix(home_team, away_team, max_goals=6, context_adj: float = 0.0):
@@ -126,7 +127,7 @@ def poisson_match_markets(home_team, away_team, max_goals=6, context_adj: float 
     )
     total = hg[:, None] + ag[None, :]
 
-    metrics = {
+    return {
         "lambda_home": lam_h,
         "lambda_away": lam_a,
         "lambda_home_base": lam_h_base,
@@ -139,7 +140,6 @@ def poisson_match_markets(home_team, away_team, max_goals=6, context_adj: float 
         "P_over_3_5": float(P[total >= 4].sum()),
         "P_BTTS": float(P[(hg[:, None] > 0) & (ag[None, :] > 0)].sum()),
     }
-    return metrics
 
 
 def dixon_coles_tau(hg, ag, lam_h, lam_a, rho):
@@ -166,7 +166,7 @@ def dixon_coles_match_markets(home_team, away_team, rho, max_goals=6, context_ad
     P /= P.sum()
     total = hg[:, None] + ag[None, :]
 
-    metrics = {
+    return {
         "lambda_home": lam_h,
         "lambda_away": lam_a,
         "lambda_home_base": lam_h_base,
@@ -179,13 +179,12 @@ def dixon_coles_match_markets(home_team, away_team, rho, max_goals=6, context_ad
         "P_over_3_5": float(P[total >= 4].sum()),
         "P_BTTS": float(P[(hg[:, None] > 0) & (ag[None, :] > 0)].sum()),
     }
-    return metrics
 
 
 def build_feature_row_for_match(home_team, away_team):
     """
     Build the logistic model feature row, matching weekly_update.py.
-    Logistic model remains UNADJUSTED by sliders (baseline).
+    Logistic model remains UNADJUSTED by any sliders (pure baseline).
     """
     # Season-long attack / defence from stats
     home_row = stats[stats["Squad"] == home_team].iloc[0]
@@ -236,7 +235,15 @@ def build_feature_row_for_match(home_team, away_team):
         "finishing_overperf_diff": home_fin_over - away_fin_over,
     }
 
-    return pd.DataFrame([feats])
+    # Ensure column order matches training
+    feature_cols = [
+        "home_Att", "home_Def", "away_Att", "away_Def",
+        "strength_diff", "defense_diff", "balance_index", "attack_defense_ratio",
+        "rolling_points_diff", "rolling_xG_diff", "rolling_xGA_diff", "rolling_GD_diff",
+        "finishing_overperf_diff",
+    ]
+
+    return pd.DataFrame([feats])[feature_cols]
 
 
 def get_team_position(team):
@@ -258,6 +265,13 @@ def last_5_results(team):
             letters.append("L"); icons.append("🟥")
     return "".join(letters), "".join(icons)
 
+
+def _get_latest(long_df_team, col):
+    if long_df_team.empty or col not in long_df_team.columns:
+        return 0.0
+    return float(long_df_team[col].iloc[0])
+
+
 # ==============================
 #           SIDEBAR
 # ==============================
@@ -273,7 +287,7 @@ with st.sidebar:
     advanced_mode = st.checkbox(
         "Advanced adjustment mode",
         value=False,
-        help="Enable more granular match context controls (injuries, morale, tactics).",
+        help="Enable more granular match context controls (injuries, morale, tactics)."
     )
 
     if not advanced_mode:
@@ -282,6 +296,8 @@ with st.sidebar:
             -3.0, 3.0, 0.0, 0.1,
             help="Adjusts expected goals and Dixon–Coles probabilities only."
         )
+        # simple scaling
+        context_adj = context_adj / 10.0
     else:
         st.subheader("Advanced Context Controls")
 
@@ -298,9 +314,10 @@ with st.sidebar:
             -3.0, 3.0, 0.0, 0.1
         )
 
-        context_adj = (att_adj + def_adj + 0.5 * morale_adj) / 2.0
+        # Combined into a small context factor
+        context_adj = (att_adj + def_adj + 0.5 * morale_adj) / 20.0
 
-    st.markdown(f"**Current adjustment:** `{context_adj:+.2f}`")
+    st.markdown(f"**Current adjustment factor:** `{context_adj:+.3f}`")
     st.caption("Note: adjustments affect Poisson & Dixon–Coles models only (logistic stays baseline).")
 
 # ==============================
@@ -315,6 +332,7 @@ st.markdown(
     '<div class="sub-title">Poisson expected goals · Dixon–Coles correction · Logistic baseline</div>',
     unsafe_allow_html=True
 )
+
 st.markdown(f"### {home_team} vs {away_team}")
 st.markdown("---")
 
@@ -327,13 +345,13 @@ classes = pipe_result_final.named_steps["clf"].classes_
 p_log = dict(zip(classes, log_probs))
 
 # -----------------------
-# Poisson & Dixon–Coles (adjusted)
+# Poisson & Dixon–Coles (adjusted & base)
 # -----------------------
 pm      = poisson_match_markets(home_team, away_team, context_adj=context_adj)
-pm_base = poisson_match_markets(home_team, away_team)
+pm_base = poisson_match_markets(home_team, away_team, context_adj=0.0)
 
 dc      = dixon_coles_match_markets(home_team, away_team, rho_hat, context_adj=context_adj)
-dc_base = dixon_coles_match_markets(home_team, away_team, rho_hat)
+dc_base = dixon_coles_match_markets(home_team, away_team, rho_hat, context_adj=0.0)
 
 home_adjustment_delta = (dc["P_home"] - dc_base["P_home"]) * 100
 
@@ -376,7 +394,7 @@ with c1:
     )
     st.markdown(
         '<div class="sub-title" style="margin-top:8px;">'
-        'Trained on historical results using team strength and rolling form. '
+        'Trained on historical results using team strength and 5-game rolling form. '
         'Unaffected by context sliders – this is your baseline view.'
         '</div>',
         unsafe_allow_html=True
@@ -447,15 +465,21 @@ with c3:
         unsafe_allow_html=True
     )
     st.markdown(
+        f'<div class="model-metric-row"><span class="model-metric-label">Over 1.5</span>'
+        f'<span class="model-metric-value">{pct(dc["P_over_1_5"])}</span></div>',
+        unsafe_allow_html=True
+    )
+    st.markdown(
         f'<div class="model-metric-row"><span class="model-metric-label">Over 2.5</span>'
         f'<span class="model-metric-value">{pct(dc["P_over_2_5"])}</span></div>',
         unsafe_allow_html=True
     )
     st.markdown(
-        f'<div class="sub-title" style="margin-top:8px;">'
-        f'Includes low-scoring dependency. Your context sliders changed the home win probability by '
+        '<div class="sub-title" style="margin-top:8px;">'
+        f'Includes low-scoring dependency. Your context sliders changed the '
+        f'<strong>Home Win</strong> probability by '
         f'<strong>{home_adjustment_delta:+.2f} percentage points</strong> '
-        f'vs the unadjusted Poisson/DC view.'
+        f'relative to the unadjusted Poisson/DC view.'
         '</div>',
         unsafe_allow_html=True
     )
@@ -484,11 +508,6 @@ with st.expander("Team Form & League Position (last 5 matches)"):
     home_lf = long_df[long_df["team"] == home_team].sort_values("Date").tail(1)
     away_lf = long_df[long_df["team"] == away_team].sort_values("Date").tail(1)
 
-    def _get_latest(df_team, col):
-        if df_team.empty or col not in df_team.columns:
-            return 0.0
-        return float(df_team[col].iloc[0])
-
     home_fin_5 = _get_latest(home_lf, "rolling_finishing_overperf")
     away_fin_5 = _get_latest(away_lf, "rolling_finishing_overperf")
 
@@ -512,13 +531,16 @@ with st.expander("Team Form & League Position (last 5 matches)"):
     st.caption(
         "Positive finishing = scoring more than expected from xG. "
         "Negative finishing = scoring less than expected. "
-        "For defence, negative values mean conceding fewer goals than xGA (good GK/defence or luck)."
+        "For defence, negative values mean conceding fewer goals than xGA "
+        "(good goalkeeping/defence or favourable variance)."
     )
     st.table(fin_df)
 
 st.markdown(
     '<div class="footer-note">'
-    'Probabilities are model-based estimates only. Models update weekly as new matches are added.</div>',
+    'Probabilities are model-based estimates only. Models update weekly as new matches are added.'
+    '</div>',
     unsafe_allow_html=True
 )
+
 
