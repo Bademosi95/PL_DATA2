@@ -65,6 +65,12 @@ long_df           = load_pickle("long_df.pkl")
 stats             = load_pickle("stats.pkl")
 rho_hat           = load_pickle("rho_hat.pkl")
 
+# normalise team names and position
+if "Squad" in stats.columns:
+    stats["Squad"] = stats["Squad"].astype(str).str.strip()
+if "Position" in stats.columns:
+    stats["Position"] = stats["Position"].astype(str).str.strip()
+
 
 # ==============================
 #     HELPER FUNCTIONS
