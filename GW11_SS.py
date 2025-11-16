@@ -5,7 +5,7 @@ import pickle
 from scipy.stats import poisson
 
 st.set_page_config(
-    page_title="Premier League Match Predictor",
+    page_title="KB Premier League Match Predictor",
     layout="wide"
 )
 
@@ -287,7 +287,7 @@ with st.sidebar:
     advanced_mode = st.checkbox(
         "Advanced adjustment mode",
         value=False,
-        help="Enable more granular match context controls (injuries, morale, tactics)."
+        help="Enable more granular match context controls (injuries, suspension, Mid week game, tactics)."
     )
 
     if not advanced_mode:
@@ -538,7 +538,7 @@ with st.expander("Team Form & League Position (last 5 matches)"):
 
 st.markdown(
     '<div class="footer-note">'
-    'Probabilities are model-based estimates only. Models update weekly as new matches are added.'
+    'Please remember, probabilities are model-based estimates only. Models update weekly as new matches are added.'
     '</div>',
     unsafe_allow_html=True
 )
