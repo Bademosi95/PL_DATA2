@@ -238,7 +238,7 @@ feats["rolling_xG_diff"]     = feats["home_rolling_xG_for"] - feats["away_rollin
 feats["rolling_xGA_diff"]    = feats["home_rolling_xG_against"] - feats["away_rolling_xG_against"]
 feats["rolling_GD_diff"]     = feats["home_rolling_GD"] - feats["away_rolling_GD"]
 
-    return pd.DataFrame([feats])
+return pd.DataFrame([feats])
 
 
 def get_team_position(team):
