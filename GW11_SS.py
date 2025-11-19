@@ -1,7 +1,21 @@
-import streamlit as st
-import pandas as pd
-import numpy as np
+"""Streamlit dashboard for a weekly-updated Premier League match predictor.
+
+The app uses a pre-trained pipeline (``pipe_result_final.pkl``) alongside a
+poisson goal model and Dixon-Coles adjustment to estimate match outcome and
+popular betting markets. It intentionally keeps all logic within a single file
+to simplify deployment, but still benefits from a few guard rails and
+defensive checks to make weekly refreshes smoother.
+"""
+
+from __future__ import annotations
+
 import pickle
+from pathlib import Path
+from typing import Dict, Optional
+
+import numpy as np
+import pandas as pd
+import streamlit as st
 from scipy.stats import poisson
 
 # ==============================
@@ -77,30 +91,47 @@ st.markdown("""
 # 2. DATA LOADING
 # ==============================
 @st.cache_resource
-def load_data():
-    # Ensure these files exist in your directory
+def load_data() -> tuple[Optional[object], Optional[object], Optional[pd.DataFrame], Optional[pd.DataFrame], Optional[float], list[str]]:
+    """Load all artifacts required for the dashboard.
+
+    Using ``Path`` keeps paths robust to future refactors, and limiting the
+    ``except`` to ``FileNotFoundError`` avoids masking other issues (e.g.
+    corrupt pickle files).
+    """
+
+    def _load_pickle(path: Path):
+        if not path.exists():
+            raise FileNotFoundError(path)
+        with path.open("rb") as fh:
+            return pickle.load(fh)
+
     try:
-        pipe = pickle.load(open("pipe_result_final.pkl", "rb"))
-        pois = pickle.load(open("poisson_model.pkl", "rb"))
-        ldf  = pickle.load(open("long_df.pkl", "rb"))
-        sts  = pickle.load(open("stats.pkl", "rb"))
-        rho  = pickle.load(open("rho_hat.pkl", "rb"))
-        
-        try:
-            fcols = pickle.load(open("feature_cols.pkl", "rb"))
-        except:
-            fcols = ["strength_diff", "defense_diff", "rolling_points_diff", 
-                     "rolling_xG_diff", "rolling_GD_diff", "finishing_overperf_diff"]
-            
-        return pipe, pois, ldf, sts, rho, fcols
-    except FileNotFoundError:
-        return None, None, None, None, None, None
+        pipe = _load_pickle(Path("pipe_result_final.pkl"))
+        pois = _load_pickle(Path("poisson_model.pkl"))
+        ldf = _load_pickle(Path("long_df.pkl"))
+        sts = _load_pickle(Path("stats.pkl"))
+        rho = _load_pickle(Path("rho_hat.pkl"))
+    except FileNotFoundError as exc:
+        st.error(f"⚠️ Missing data file: {exc.name if hasattr(exc, 'name') else exc}.")
+        st.stop()
+
+    fcols_path = Path("feature_cols.pkl")
+    if fcols_path.exists():
+        feature_cols = _load_pickle(fcols_path)
+    else:
+        feature_cols = [
+            "strength_diff",
+            "defense_diff",
+            "rolling_points_diff",
+            "rolling_xG_diff",
+            "rolling_GD_diff",
+            "finishing_overperf_diff",
+        ]
+
+    return pipe, pois, ldf, sts, rho, feature_cols
+
 
 pipe_result_final, poisson_model, long_df, stats, rho_hat, feature_cols = load_data()
-
-if pipe_result_final is None:
-    st.error("⚠️ Data files missing. Please run `weekly_update.py` first.")
-    st.stop()
 
 # Cleanup Strings
 if "Squad" in stats.columns: stats["Squad"] = stats["Squad"].astype(str).str.strip()
@@ -109,8 +140,9 @@ long_df["team"] = long_df["team"].astype(str).str.strip()
 # ==============================
 # 3. CALCULATION LOGIC
 # ==============================
-def get_form_html(team):
-    """Returns HTML string of colored boxes for last 5 games."""
+def get_form_html(team: str) -> str:
+    """Return HTML string of colored boxes for last five games for ``team``."""
+
     last_5 = long_df[long_df["team"] == team].sort_values("Date").tail(5)
     html = ""
     for _, r in last_5.iterrows():
@@ -122,13 +154,28 @@ def get_form_html(team):
             html += '<span class="form-box l">L</span>'
     return html
 
-def get_latest_row(team):
-    return long_df[long_df["team"] == team].iloc[-1]
+def get_latest_row(team: str) -> pd.Series:
+    """Return the most recent record for ``team``.
 
-def run_predictions(home, away, adj):
+    Raises a clear error when weekly refresh fails to include a club, which is
+    easier to debug than an ``IndexError`` later in the pipeline.
+    """
+
+    team_rows = long_df[long_df["team"] == team]
+    if team_rows.empty:
+        raise ValueError(f"Team '{team}' not found in `long_df`. Did the weekly update fail?")
+    return team_rows.iloc[-1]
+
+def run_predictions(home: str, away: str, adj: float) -> Dict[str, float]:
+    """Generate outcome probabilities and common markets for the match."""
+
     # 1. Poisson Lambdas (xG)
-    lam_h_base = float(poisson_model.predict(pd.DataFrame({"team":[home], "opponent":[away], "is_home":[1]})).iloc[0])
-    lam_a_base = float(poisson_model.predict(pd.DataFrame({"team":[away], "opponent":[home], "is_home":[0]})).iloc[0])
+    lam_h_base = float(
+        poisson_model.predict(pd.DataFrame({"team": [home], "opponent": [away], "is_home": [1]})).iloc[0]
+    )
+    lam_a_base = float(
+        poisson_model.predict(pd.DataFrame({"team": [away], "opponent": [home], "is_home": [0]})).iloc[0]
+    )
     
     lam_h = max(lam_h_base * (1 + adj), 0.01)
     lam_a = max(lam_a_base * (1 - adj), 0.01)
@@ -196,9 +243,13 @@ st.markdown(f'<div class="match-title">{home_team} vs {away_team}</div>', unsafe
 st.markdown('<div class="vs-text">Premier League Forecast</div>', unsafe_allow_html=True)
 
 # --- Run Logic ---
-preds = run_predictions(home_team, away_team, context_adj)
-h_row = get_latest_row(home_team)
-a_row = get_latest_row(away_team)
+try:
+    preds = run_predictions(home_team, away_team, context_adj)
+    h_row = get_latest_row(home_team)
+    a_row = get_latest_row(away_team)
+except ValueError as exc:
+    st.error(str(exc))
+    st.stop()
 
 # --- SECTION 1: THE HEADLINES (Big & Bold) ---
 st.markdown('<div class="section-header">🏆 Match Outcome</div>', unsafe_allow_html=True)
