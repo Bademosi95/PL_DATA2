@@ -36,82 +36,25 @@ st.set_page_config(
 
 CUSTOM_CSS = """
 <style>
-    .main-title {
-        font-size: 32px;
-        font-weight: 800;
-        margin-bottom: 4px;
-        color: #F9FAFB;
-    }
-    .sub-title {
-        font-size: 14px;
-        color: #9CA3AF;
-        margin-bottom: 20px;
-    }
-    .model-card {
-        border-radius: 12px;
-        padding: 18px 20px;
-        background-color: #0B1120;
-        color: #F9FAFB;
-        border: 1px solid #1F2937;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        height: 100%;
-    }
-    .model-card h4 {
-        margin-top: 0;
-        margin-bottom: 12px;
-        font-size: 18px;
-        color: #F9FAFB;
-        border-bottom: 2px solid #374151;
-        padding-bottom: 8px;
-    }
-    .model-metric-row {
-        display: flex;
-        justify-content: space-between;
-        font-size: 14px;
-        margin: 6px 0;
-        padding: 4px 0;
-    }
-    .model-metric-label {
-        color: #9CA3AF;
-    }
-    .model-metric-value {
-        font-weight: 600;
-        color: #F9FAFB;
-    }
-    .metric-highlight {
-        background-color: #1F2937;
-        padding: 2px 8px;
-        border-radius: 4px;
-    }
-    .footer-note {
-        margin-top: 30px;
-        font-size: 11px;
-        color: #6B7280;
-        text-align: center;
-        padding: 15px;
-        border-top: 1px solid #374151;
-    }
-    .info-box {
-        background-color: #1F2937;
-        border-left: 3px solid #3B82F6;
-        padding: 12px;
-        border-radius: 4px;
-        margin: 10px 0;
-    }
-    .warning-box {
-        background-color: #78350F;
-        border-left: 3px solid #F59E0B;
-        padding: 12px;
-        border-radius: 4px;
-        margin: 10px 0;
-    }
-    .success-box {
-        background-color: #064E3B;
-        border-left: 3px solid #10B981;
-        padding: 12px;
-        border-radius: 4px;
-        margin: 10px 0;
-    }
+    body, .main { color: #F3F4F6; }
+    .main-title { font-size: 36px; font-weight: 800; margin-bottom: 4px; color: #FFFFFF; }
+    .sub-title { font-size: 16px; color: #D1D5DB; margin-bottom: 20px; }
+    .model-card { border-radius: 12px; padding: 20px; background-color: #111827;
+                  color: #F9FAFB; border: 1px solid #374151; box-shadow: 0 2px 6px rgba(0,0,0,0.4); }
+    .model-card h4 { font-size: 20px; font-weight: 700; color:#FFFFFF; border-bottom:2px solid #4B5563;
+                     padding-bottom:8px; margin-bottom:14px; }
+    .model-metric-row { display:flex; justify-content:space-between; font-size:16px; margin:8px 0; }
+    .model-metric-label { color:#E5E7EB; }
+    .model-metric-value { font-weight:700; color:#FFFFFF; }
+    .metric-highlight { background-color:#1E293B; padding:3px 10px; border-radius:6px; font-size:16px; }
+    .info-box { background-color:#1E3A8A; border-left:4px solid #3B82F6; padding:12px; border-radius:6px;
+                margin:10px 0; color:#F3F4F6; font-size:15px; }
+    .warning-box { background-color:#78350F; border-left:4px solid #FBBF24; padding:12px; border-radius:6px;
+                   margin:10px 0; color:#FEF3C7; font-size:15px; }
+    .success-box { background-color:#065F46; border-left:4px solid #34D399; padding:12px; border-radius:6px;
+                   margin:10px 0; color:#D1FAE5; font-size:15px; }
+    .footer-note { margin-top:30px; font-size:13px; color:#D1D5DB; text-align:center;
+                   padding:16px; border-top:1px solid #4B5563; line-height:1.6; }
 </style>
 """
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
