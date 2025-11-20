@@ -36,25 +36,229 @@ st.set_page_config(
 
 CUSTOM_CSS = """
 <style>
-    body, .main { color: #F3F4F6; }
-    .main-title { font-size: 36px; font-weight: 800; margin-bottom: 4px; color: #FFFFFF; }
-    .sub-title { font-size: 16px; color: #D1D5DB; margin-bottom: 20px; }
-    .model-card { border-radius: 12px; padding: 20px; background-color: #111827;
-                  color: #F9FAFB; border: 1px solid #374151; box-shadow: 0 2px 6px rgba(0,0,0,0.4); }
-    .model-card h4 { font-size: 20px; font-weight: 700; color:#FFFFFF; border-bottom:2px solid #4B5563;
-                     padding-bottom:8px; margin-bottom:14px; }
-    .model-metric-row { display:flex; justify-content:space-between; font-size:16px; margin:8px 0; }
-    .model-metric-label { color:#E5E7EB; }
-    .model-metric-value { font-weight:700; color:#FFFFFF; }
-    .metric-highlight { background-color:#1E293B; padding:3px 10px; border-radius:6px; font-size:16px; }
-    .info-box { background-color:#1E3A8A; border-left:4px solid #3B82F6; padding:12px; border-radius:6px;
-                margin:10px 0; color:#F3F4F6; font-size:15px; }
-    .warning-box { background-color:#78350F; border-left:4px solid #FBBF24; padding:12px; border-radius:6px;
-                   margin:10px 0; color:#FEF3C7; font-size:15px; }
-    .success-box { background-color:#065F46; border-left:4px solid #34D399; padding:12px; border-radius:6px;
-                   margin:10px 0; color:#D1FAE5; font-size:15px; }
-    .footer-note { margin-top:30px; font-size:13px; color:#D1D5DB; text-align:center;
-                   padding:16px; border-top:1px solid #4B5563; line-height:1.6; }
+    /* ========= GLOBAL APP THEME ========= */
+    .stApp {
+        background: radial-gradient(circle at top left, #111827 0, #020617 45%, #000000 100%);
+        color: #F9FAFB;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", -apple-system, sans-serif;
+    }
+
+    /* Remove default padding for a tighter, dashboard-like layout */
+    .block-container {
+        padding-top: 1.8rem;
+        padding-bottom: 2rem;
+        max-width: 1200px;
+    }
+
+    /* ========= TYPOGRAPHY ========= */
+    .main-title {
+        font-size: 38px;
+        font-weight: 800;
+        letter-spacing: 0.03em;
+        margin-bottom: 6px;
+        color: #F9FAFB;
+    }
+    .sub-title {
+        font-size: 16px;
+        color: #CBD5F5;
+        margin-bottom: 20px;
+        opacity: 0.9;
+    }
+
+    h2, h3, h4 {
+        color: #E5E7EB !important;
+        letter-spacing: 0.02em;
+    }
+
+    /* ========= SIDEBAR ========= */
+    [data-testid="stSidebar"] {
+        background: linear-gradient(to bottom, #020617, #020617 40%, #030712 100%) !important;
+        border-right: 1px solid #1F2933;
+    }
+
+    [data-testid="stSidebar"] * {
+        font-size: 14px;
+    }
+
+    [data-testid="stSidebar"] h1,
+    [data-testid="stSidebar"] h2,
+    [data-testid="stSidebar"] h3 {
+        color: #E5E7EB !important;
+    }
+
+    [data-testid="stSidebar"] .stSelectbox label {
+        font-weight: 600;
+    }
+
+    /* ========= GENERIC CARD STYLE ========= */
+    .model-card,
+    .stat-card,
+    .headline-card {
+        border-radius: 18px;
+        padding: 18px 20px;
+        background: linear-gradient(135deg, rgba(15,23,42,0.96), rgba(17,24,39,0.96));
+        border: 1px solid rgba(55,65,81,0.9);
+        box-shadow: 0 18px 45px rgba(0,0,0,0.45);
+        color: #F9FAFB;
+    }
+
+    /* Extra chrome for the main headline section */
+    .headline-card {
+        border-radius: 20px;
+        padding: 18px 22px 8px 22px;
+        border: 1px solid rgba(59,130,246,0.4);
+        box-shadow: 0 25px 60px rgba(15,23,42,0.9);
+        backdrop-filter: blur(14px);
+    }
+
+    .model-card h4 {
+        margin-top: 0;
+        margin-bottom: 12px;
+        font-size: 18px;
+        color: #F9FAFB;
+        border-bottom: 1px solid #374151;
+        padding-bottom: 6px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .model-card h4::after {
+        content: "";
+        flex: 1;
+        height: 2px;
+        border-radius: 999px;
+        margin-left: 8px;
+        background: linear-gradient(90deg, #60A5FA, transparent);
+        opacity: 0.5;
+    }
+
+    /* ========= METRICS & BADGES ========= */
+    .model-metric-row {
+        display: flex;
+        justify-content: space-between;
+        font-size: 15px;
+        margin: 6px 0;
+        padding: 4px 0;
+    }
+
+    .model-metric-label {
+        color: #E5E7EB;
+        opacity: 0.9;
+    }
+
+    .model-metric-value {
+        font-weight: 700;
+        color: #F9FAFB;
+    }
+
+    .metric-highlight {
+        background: radial-gradient(circle at top left, #1D4ED8, #1E293B);
+        padding: 3px 10px;
+        border-radius: 999px;
+        font-size: 15px;
+        border: 1px solid rgba(129,140,248,0.5);
+    }
+
+    /* Streamlit native metric widget tweaks */
+    [data-testid="stMetric"] {
+        background: radial-gradient(circle at top left, rgba(15,23,42,0.9), rgba(15,23,42,0.3));
+        padding: 10px 14px;
+        border-radius: 14px;
+        border: 1px solid rgba(55,65,81,0.8);
+        box-shadow: 0 16px 40px rgba(15,23,42,0.9);
+    }
+
+    [data-testid="stMetricValue"] {
+        font-size: 20px;
+        font-weight: 700;
+        color: #F9FAFB;
+    }
+
+    [data-testid="stMetricLabel"] {
+        font-size: 13px;
+        color: #D1D5DB;
+    }
+
+    /* ========= INFO / WARNING / SUCCESS BOXES ========= */
+    .info-box {
+        background: linear-gradient(135deg, #1D4ED8, #1E3A8A);
+        border-left: 4px solid #60A5FA;
+        padding: 12px 13px;
+        border-radius: 10px;
+        margin: 10px 0;
+        color: #E5F2FF;
+        font-size: 14px;
+    }
+
+    .warning-box {
+        background: linear-gradient(135deg, #92400E, #78350F);
+        border-left: 4px solid #F59E0B;
+        padding: 12px 13px;
+        border-radius: 10px;
+        margin: 10px 0;
+        color: #FEF3C7;
+        font-size: 14px;
+    }
+
+    .success-box {
+        background: linear-gradient(135deg, #047857, #065F46);
+        border-left: 4px solid #34D399;
+        padding: 12px 13px;
+        border-radius: 10px;
+        margin: 10px 0;
+        color: #ECFDF5;
+        font-size: 14px;
+    }
+
+    /* ========= FOOTER ========= */
+    .footer-note {
+        margin-top: 28px;
+        font-size: 13px;
+        color: #D1D5DB;
+        text-align: center;
+        padding: 16px 12px 6px 12px;
+        border-top: 1px solid rgba(55,65,81,0.9);
+        line-height: 1.6;
+        background: radial-gradient(circle at top, rgba(15,23,42,0.9), transparent);
+    }
+
+    /* ========= TABLES / DATAFRAMES ========= */
+    [data-testid="stDataFrame"] {
+        border-radius: 14px;
+        overflow: hidden;
+        border: 1px solid rgba(55,65,81,0.9);
+        box-shadow: 0 14px 36px rgba(15,23,42,0.9);
+        background: rgba(15,23,42,0.85);
+    }
+
+    [data-testid="stDataFrame"] table {
+        color: #E5E7EB;
+        font-size: 13px;
+    }
+
+    /* ========= EXPANDERS ========= */
+    details {
+        border-radius: 14px;
+        border: 1px solid rgba(55,65,81,0.9);
+        background: radial-gradient(circle at top left, rgba(15,23,42,0.98), rgba(15,23,42,0.85));
+        padding: 3px 10px 10px 10px;
+        margin-bottom: 8px;
+        box-shadow: 0 14px 36px rgba(15,23,42,0.9);
+    }
+
+    summary {
+        font-weight: 600;
+        color: #E5E7EB;
+    }
+
+    /* ========= HR / SEPARATORS ========= */
+    hr {
+        border: none;
+        height: 1px;
+        background: linear-gradient(90deg, transparent, #374151, transparent);
+        margin: 1.2rem 0;
+    }
 </style>
 """
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
