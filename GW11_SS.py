@@ -571,7 +571,7 @@ with st.sidebar:
         
     else:
         # Advanced mode: multiple sliders
-        st.markdown("**Granular Controls:**")
+        st.markdown("**Real life context Controls:**")
         
         att_adj = st.slider(
             "⚔️ Attack",
@@ -912,7 +912,7 @@ st.markdown("---")
 # ADDITIONAL MARKETS
 # ───────────────────────────────────────────────────────────────────
 
-st.subheader("🎰 Additional Markets")
+st.subheader("Additional Markets")
 
 col_a, col_b, col_c = st.columns(3)
 
@@ -973,14 +973,14 @@ with st.expander("📋 Team Form & Statistics (Last 5 Matches)", expanded=False)
         st.markdown(f"- **Defence (xGA - GA):** {home_def:+.2f}")
         
         if home_fin > 1:
-            st.success("💚 Overperforming xG (hot finishing)")
+            st.success("💚 Overperforming xG (good finishing streak)")
         elif home_fin < -1:
-            st.warning("⚠️ Underperforming xG (poor finishing)")
+            st.warning("⚠️ Underperforming xG (poor finishing streak)")
         
         if home_def > 1:
-            st.success("💚 Solid defence (conceding less than xGA)")
+            st.success("💚 Overperforming defence (conceding less than xGA)")
         elif home_def < -1:
-            st.warning("⚠️ Vulnerable defence (conceding more than xGA)")
+            st.warning("⚠️ Underperforming defence (conceding more than xGA)")
     
     # Away team stats
     with col_away:
@@ -1011,14 +1011,14 @@ with st.expander("📋 Team Form & Statistics (Last 5 Matches)", expanded=False)
         st.markdown(f"- **Defence (xGA - GA):** {away_def:+.2f}")
         
         if away_fin > 1:
-            st.success("💚 Overperforming xG (hot finishing)")
+            st.success("💚 Overperforming xG (good finishing streak)")
         elif away_fin < -1:
-            st.warning("⚠️ Underperforming xG (poor finishing)")
+            st.warning("⚠️ Underperforming xG (poor finishing streak)")
         
         if away_def > 1:
-            st.success("💚 Solid defence (conceding less than xGA)")
+            st.success("💚 Overperforming defence (conceding less than xGA)")
         elif away_def < -1:
-            st.warning("⚠️ Vulnerable defence (conceding more than xGA)")
+            st.warning("⚠️ Underperforming defence (conceding more than xGA)")
     
     # Comparison table
     st.markdown("---")
@@ -1190,7 +1190,7 @@ st.markdown(
     '<div class="footer-note">'
     '⚠️ <strong>Important Disclaimer:</strong><br>'
     'These predictions are statistical models based on historical data and should not be used as the sole basis for betting or decision-making. '
-    'Football matches are inherently unpredictable, and many factors (injuries, referee decisions, weather, motivation) cannot be fully captured by models.<br><br>'
+    'As you know, football matches are inherently unpredictable, and many factors (injuries, referee decisions, weather, motivation) cannot be fully captured by models.<br><br>'
     '📊 <strong>Model Updates:</strong> Models are retrained weekly with latest match data to maintain accuracy.<br>'
     '🔧 <strong>Context Adjustments:</strong> Use the sidebar sliders to incorporate team news and match-specific factors.<br>'
     '📈 <strong>Model Types:</strong> Logistic (outcome-based), Poisson (goal-based), Dixon-Coles (correlation-adjusted).'
