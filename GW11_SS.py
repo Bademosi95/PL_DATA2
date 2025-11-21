@@ -34,7 +34,26 @@ st.set_page_config(
 # CUSTOM STYLING
 # ═══════════════════════════════════════════════════════════════════
 
-CUSTOM_CSS = ""
+CUSTOM_CSS = """
+<style>
+    body, .stApp { background: #F5F6FA; color:#111; font-family: Inter, system-ui; }
+    .main-title { font-size:38px; font-weight:800; color:#111; }
+    .sub-title { font-size:16px; color:#4B5563; }
+    .model-card, .stat-card, .headline-card {
+        background:#FFFFFF; border-radius:16px; padding:20px;
+        border:1px solid #E5E7EB; box-shadow:0 4px 14px rgba(0,0,0,0.08);
+        color:#111;
+    }
+    .model-card h4 { color:#111; border-bottom:1px solid #E5E7EB; }
+    .model-metric-label { color:#4B5563; }
+    .metric-highlight { background:#F0F4FF; color:#1E40AF; border:1px solid #93C5FD; }
+    [data-testid="stSidebar"] {
+        background:#FFFFFF !important; border-right:1px solid #E5E7EB;
+    }
+    [data-testid="stSidebar"] * { color:#111 !important; }
+    .footer-note { background:#FFFFFF; color:#4B5563; border-top:1px solid #E5E7EB; }
+</style>
+"""
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
 # ═══════════════════════════════════════════════════════════════════
@@ -446,25 +465,6 @@ def get_team_position(team):
 # ═══════════════════════════════════════════════════════════════════
 
 with st.sidebar:
-    # Theme toggle
-    theme = st.selectbox("App Theme", ["Dark", "Light"], index=0)
-
-    DARK_CSS = """<style>
-    /* Dark theme styling */
-    body, .stApp { background: radial-gradient(circle at top left, #111827, #020617 60%, #000); color: #F9FAFB; }
-    [data-testid="stSidebar"] { background: #0f172a !important; color:#f1f5f9 !important; }
-    [data-testid="stSidebar"] * { color:#f1f5f9 !important; }
-    </style>"""
-
-    LIGHT_CSS = """<style>
-    /* Light theme styling */
-    body, .stApp { background: #f3f4f6; color: #1f2937; }
-    [data-testid="stSidebar"] { background: #ffffff !important; color:#1f2937 !important; border-right:1px solid #e5e7eb; }
-    [data-testid="stSidebar"] * { color:#1f2937 !important; }
-    </style>"""
-
-    st.markdown(DARK_CSS if theme == "Dark" else LIGHT_CSS, unsafe_allow_html=True)
-
     st.header("⚽ Match Setup")
     
     # Team selection
