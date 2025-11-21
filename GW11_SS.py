@@ -26,315 +26,318 @@ st.set_page_config(
 )
 
 # ═══════════════════════════════════════════════════════════════════
-# MODERN DESIGN SYSTEM
+# MODERN DESIGN SYSTEM (APPLE / GOOGLE STYLE)
 # ═══════════════════════════════════════════════════════════════════
 
 CUSTOM_CSS = """
 <style>
-    /* Import Google Font */
+    /* Font System */
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
-    
-    /* Global Styles */
-    * {
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
+    html, body, [class*="css"] {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
     }
-    
+
+    /* App Background - soft neutral */
     .stApp {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        background-attachment: fixed;
+        background: linear-gradient(to bottom, #f9fafb 0%, #e5e7eb 100%) !important;
     }
-    
+
     .main .block-container {
-        padding: 2rem 3rem;
-        max-width: 1400px;
+        padding: 1.6rem 2.2rem;
+        max-width: 1320px;
     }
-    
-    /* Header Section */
+
+    /* HERO SECTION */
     .hero-section {
-        background: rgba(255, 255, 255, 0.98);
-        backdrop-filter: blur(20px);
+        background: #ffffff;
         border-radius: 24px;
-        padding: 3rem;
-        margin-bottom: 2rem;
-        box-shadow: 0 20px 60px rgba(0,0,0,0.15);
-        border: 1px solid rgba(255,255,255,0.3);
+        padding: 2rem 2rem 1.75rem 2rem;
+        margin-bottom: 1.8rem;
+        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+        border: 1px solid rgba(148, 163, 184, 0.25);
     }
-    
+
     .hero-title {
-        font-size: 42px;
+        font-size: 32px;
         font-weight: 800;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
+        color: #0f172a;
+        letter-spacing: -0.03em;
         margin: 0;
-        letter-spacing: -0.5px;
     }
-    
+
     .hero-subtitle {
-        font-size: 16px;
-        color: #64748b;
+        font-size: 14px;
+        color: #6b7280;
         font-weight: 500;
-        margin-top: 0.5rem;
+        margin-top: 0.35rem;
     }
-    
+
     .match-header {
         display: flex;
         align-items: center;
         justify-content: center;
-        gap: 2rem;
-        margin-top: 2rem;
-        padding: 1.5rem;
-        background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
-        border-radius: 16px;
+        gap: 1.5rem;
+        margin-top: 1.3rem;
+        padding: 0.9rem 1.4rem;
+        background: #f9fafb;
+        border-radius: 18px;
+        border: 1px solid #e5e7eb;
     }
-    
+
     .team-name {
-        font-size: 28px;
+        font-size: 24px;
         font-weight: 700;
-        color: #1e293b;
+        color: #111827;
     }
-    
+
     .vs-divider {
-        font-size: 20px;
+        font-size: 18px;
         font-weight: 600;
-        color: #94a3b8;
-        padding: 0 1rem;
+        color: #9ca3af;
+        padding: 0 0.75rem;
     }
-    
-    /* Card System */
+
+    /* CARD SYSTEM */
     .glass-card {
-        background: rgba(255, 255, 255, 0.95);
-        backdrop-filter: blur(20px);
-        border-radius: 20px;
-        padding: 1.75rem;
-        box-shadow: 0 10px 40px rgba(0,0,0,0.1);
-        border: 1px solid rgba(255,255,255,0.5);
-        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        background: #ffffff;
+        border-radius: 18px;
+        padding: 1.4rem 1.5rem;
+        box-shadow: 0 6px 20px rgba(15, 23, 42, 0.06);
+        border: 1px solid rgba(148, 163, 184, 0.22);
+        transition: all 0.16s ease-out;
         height: 100%;
     }
-    
+
     .glass-card:hover {
-        transform: translateY(-4px);
-        box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+        transform: translateY(-2px);
+        box-shadow: 0 10px 24px rgba(15, 23, 42, 0.10);
     }
-    
+
     .card-title {
-        font-size: 18px;
+        font-size: 16px;
         font-weight: 700;
-        color: #1e293b;
-        margin: 0 0 1.25rem 0;
+        color: #111827;
+        margin: 0 0 1rem 0;
         display: flex;
         align-items: center;
-        gap: 0.5rem;
+        gap: 0.45rem;
     }
-    
+
     .card-icon {
-        font-size: 20px;
+        font-size: 18px;
     }
-    
-    /* Metrics */
+
+    /* HEADLINE METRICS */
+    .headline-metric {
+        background: #ffffff;
+        border-radius: 18px;
+        padding: 1.2rem 1.3rem;
+        text-align: center;
+        box-shadow: 0 6px 20px rgba(15, 23, 42, 0.07);
+        border: 1px solid rgba(148, 163, 184, 0.25);
+        transition: transform 0.16s ease-out, box-shadow 0.16s ease-out;
+    }
+
+    .headline-metric:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 10px 26px rgba(15, 23, 42, 0.12);
+    }
+
+    .headline-label {
+        font-size: 11px;
+        font-weight: 600;
+        color: #6b7280;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        margin-bottom: 0.4rem;
+    }
+
+    .headline-value {
+        font-size: 30px;
+        font-weight: 800;
+        color: #4f46e5;
+    }
+
+    /* METRICS */
     .metric-row {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        padding: 0.75rem 0;
+        padding: 0.55rem 0;
         border-bottom: 1px solid #f1f5f9;
     }
-    
+
     .metric-row:last-child {
         border-bottom: none;
     }
-    
+
     .metric-label {
-        font-size: 14px;
-        font-weight: 500;
-        color: #64748b;
-    }
-    
-    .metric-value {
-        font-size: 16px;
-        font-weight: 700;
-        color: #1e293b;
-        padding: 0.25rem 0.75rem;
-        background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
-        border-radius: 8px;
-    }
-    
-    .metric-value-highlight {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        padding: 0.35rem 1rem;
-        border-radius: 10px;
-        font-weight: 700;
-    }
-    
-    /* Headline Metrics */
-    .headline-metric {
-        background: rgba(255, 255, 255, 0.95);
-        backdrop-filter: blur(20px);
-        border-radius: 16px;
-        padding: 1.5rem;
-        text-align: center;
-        box-shadow: 0 10px 40px rgba(0,0,0,0.08);
-        border: 1px solid rgba(255,255,255,0.5);
-        transition: all 0.3s ease;
-    }
-    
-    .headline-metric:hover {
-        transform: scale(1.05);
-        box-shadow: 0 15px 50px rgba(0,0,0,0.12);
-    }
-    
-    .headline-label {
         font-size: 13px;
+        font-weight: 500;
+        color: #6b7280;
+    }
+
+    .metric-value {
+        font-size: 14px;
         font-weight: 600;
-        color: #64748b;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-        margin-bottom: 0.5rem;
+        color: #111827;
+        padding: 0.25rem 0.7rem;
+        background: #f3f4f6;
+        border-radius: 999px;
     }
-    
-    .headline-value {
-        font-size: 32px;
-        font-weight: 800;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
+
+    .metric-value-highlight {
+        font-size: 14px;
+        font-weight: 700;
+        background: #4f46e5;
+        color: #ffffff;
+        padding: 0.28rem 0.85rem;
+        border-radius: 999px;
     }
-    
-    /* Sidebar Styling */
+
+    /* SIDEBAR */
     [data-testid="stSidebar"] {
-        background: rgba(255, 255, 255, 0.98);
-        backdrop-filter: blur(20px);
-        border-right: 1px solid rgba(226, 232, 240, 0.5);
+        background: #ffffff;
+        border-right: 1px solid #e5e7eb;
     }
-    
+
     [data-testid="stSidebar"] .stSelectbox label,
     [data-testid="stSidebar"] .stSlider label,
     [data-testid="stSidebar"] h1,
     [data-testid="stSidebar"] h2,
     [data-testid="stSidebar"] h3 {
-        color: #1e293b !important;
+        color: #111827 !important;
         font-weight: 600 !important;
     }
-    
-    /* Section Headers */
+
+    /* SECTION HEADERS */
     .section-header {
-        font-size: 24px;
+        font-size: 20px;
         font-weight: 700;
-        color: white;
-        margin: 2rem 0 1rem 0;
+        color: #111827;
+        margin: 1.6rem 0 1rem 0;
         display: flex;
         align-items: center;
         gap: 0.5rem;
     }
-    
+
     .section-divider {
-        height: 2px;
-        background: linear-gradient(90deg, rgba(255,255,255,0.3) 0%, transparent 100%);
-        margin: 1.5rem 0;
+        height: 1px;
+        background: #e5e7eb;
+        margin: 1.6rem 0 1.6rem 0;
         border: none;
     }
-    
-    /* Expander Styling */
+
+    /* EXPANDERS */
     .streamlit-expanderHeader {
-        background: rgba(255, 255, 255, 0.95);
-        backdrop-filter: blur(20px);
-        border-radius: 12px;
-        font-weight: 600;
-        color: #1e293b;
-        border: 1px solid rgba(255,255,255,0.5);
+        background: #ffffff !important;
+        border-radius: 12px !important;
+        font-weight: 600 !important;
+        color: #111827 !important;
+        border: 1px solid rgba(148, 163, 184, 0.45) !important;
     }
-    
+
     .streamlit-expanderContent {
-        background: rgba(255, 255, 255, 0.95);
-        backdrop-filter: blur(20px);
-        border-radius: 0 0 12px 12px;
-        border: 1px solid rgba(255,255,255,0.5);
-        border-top: none;
+        background: #ffffff !important;
+        border-radius: 0 0 12px 12px !important;
+        border: 1px solid rgba(148, 163, 184, 0.35) !important;
+        border-top: none !important;
     }
-    
-    /* Status Indicators */
+
+    /* STATUS BADGES */
     .status-badge {
         display: inline-block;
-        padding: 0.35rem 0.85rem;
-        border-radius: 20px;
-        font-size: 13px;
+        padding: 0.3rem 0.8rem;
+        border-radius: 999px;
+        font-size: 12px;
         font-weight: 600;
-        letter-spacing: 0.3px;
+        letter-spacing: 0.03em;
     }
-    
+
     .badge-success {
-        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-        color: white;
+        background: linear-gradient(135deg, #22c55e, #16a34a);
+        color: #ffffff;
     }
-    
+
     .badge-warning {
-        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-        color: white;
+        background: linear-gradient(135deg, #f97316, #ea580c);
+        color: #ffffff;
     }
-    
+
     .badge-neutral {
-        background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
-        color: white;
+        background: linear-gradient(135deg, #6366f1, #4f46e5);
+        color: #ffffff;
     }
-    
-    /* Form Indicators */
+
+    /* FORM ICONS */
     .form-icon {
         font-size: 18px;
         display: inline-block;
         margin: 0 2px;
     }
-    
-    /* Footer */
+
+    /* FOOTER */
     .footer-section {
-        background: rgba(255, 255, 255, 0.95);
-        backdrop-filter: blur(20px);
-        border-radius: 16px;
-        padding: 2rem;
-        margin-top: 3rem;
+        background: #ffffff;
+        border-radius: 18px;
+        padding: 1.5rem;
+        margin-top: 2.2rem;
         text-align: center;
-        border: 1px solid rgba(255,255,255,0.5);
-        box-shadow: 0 10px 40px rgba(0,0,0,0.08);
+        border: 1px solid rgba(148, 163, 184, 0.35);
+        box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
     }
-    
+
     .footer-text {
-        font-size: 13px;
-        color: #64748b;
-        line-height: 1.8;
+        font-size: 12px;
+        color: #6b7280;
+        line-height: 1.7;
     }
-    
+
     /* Hide Streamlit Branding */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
-    
-    /* Animations */
-    @keyframes fadeIn {
-        from { opacity: 0; transform: translateY(10px); }
+
+    /* SIMPLE FADE ANIMATION */
+    @keyframes fadeInSoft {
+        from { opacity: 0; transform: translateY(4px); }
         to { opacity: 1; transform: translateY(0); }
     }
-    
-    .glass-card, .headline-metric {
-        animation: fadeIn 0.5s ease;
+
+    .hero-section, .glass-card, .headline-metric {
+        animation: fadeInSoft 0.35s ease-out;
     }
-    
-    /* Responsive Design */
+
+    /* RESPONSIVE DESIGN */
     @media (max-width: 768px) {
         .main .block-container {
-            padding: 1rem;
+            padding: 1.1rem !important;
         }
-        
+
         .hero-section {
-            padding: 2rem 1.5rem;
+            padding: 1.5rem 1.3rem 1.2rem 1.3rem;
         }
-        
+
         .hero-title {
-            font-size: 32px;
+            font-size: 24px;
         }
-        
+
         .match-header {
             flex-direction: column;
-            gap: 1rem;
+            gap: 0.6rem;
+            padding: 0.8rem 1rem;
+        }
+
+        .team-name {
+            font-size: 20px;
+        }
+
+        .headline-value {
+            font-size: 24px;
+        }
+
+        .glass-card {
+            padding: 1.2rem 1.1rem;
         }
     }
 </style>
@@ -569,6 +572,18 @@ def get_poisson_lambdas(home_team, away_team, context_adj=0.0):
         st.error(f"Poisson prediction error: {e}")
         return None
 
+def dixon_coles_tau(hg, ag, lam_h, lam_a, rho):
+    if hg == 0 and ag == 0:
+        return 1 - (lam_h * lam_a * rho)
+    elif hg == 0 and ag == 1:
+        return 1 + lam_a * rho
+    elif hg == 1 and ag == 0:
+        return 1 + lam_h * rho
+    elif hg == 1 and ag == 1:
+        return 1 - rho
+    else:
+        return 1.0
+
 def compute_scoreline_probabilities(lam_home, lam_away, max_goals=6, use_dc=False, rho=0.0):
     hg = np.arange(0, max_goals + 1)
     ag = np.arange(0, max_goals + 1)
@@ -600,18 +615,6 @@ def compute_scoreline_probabilities(lam_home, lam_away, max_goals=6, use_dc=Fals
         "P_clean_sheet_home": float(P[:, 0].sum()),
         "P_clean_sheet_away": float(P[0, :].sum())
     }
-
-def dixon_coles_tau(hg, ag, lam_h, lam_a, rho):
-    if hg == 0 and ag == 0:
-        return 1 - (lam_h * lam_a * rho)
-    elif hg == 0 and ag == 1:
-        return 1 + lam_a * rho
-    elif hg == 1 and ag == 0:
-        return 1 + lam_h * rho
-    elif hg == 1 and ag == 1:
-        return 1 - rho
-    else:
-        return 1.0
 
 def get_team_form(team, n=5):
     try:
@@ -672,7 +675,7 @@ with st.sidebar:
     st.markdown("---")
     
     st.markdown("## 🎯 Match Context")
-    st.caption("Adjust for injuries, form, tactics")
+    st.caption("Adjust for injuries, form, tactics and schedule effects.")
     
     advanced_mode = st.checkbox("Advanced Controls", value=False)
     
@@ -694,7 +697,7 @@ with st.sidebar:
         context_adj = (att_adj + def_adj + 0.5 * morale_adj) / 20.0
     
     if abs(context_adj) < 0.01:
-        st.markdown('<span class="status-badge badge-neutral">⚖️ Neutral</span>', unsafe_allow_html=True)
+        st.markdown('<span class="status-badge badge-neutral">⚖️ Neutral Context</span>', unsafe_allow_html=True)
     elif context_adj > 0:
         st.markdown(f'<span class="status-badge badge-success">🏠 Home +{context_adj:.2f}</span>', unsafe_allow_html=True)
     else:
@@ -724,17 +727,17 @@ if home_team == away_team:
     st.stop()
 
 # Hero Section
-st.markdown('''
+st.markdown(f'''
 <div class="hero-section">
     <div class="hero-title">Premier League Predictor</div>
-    <div class="hero-subtitle">AI-powered match analysis • Three model ensemble</div>
+    <div class="hero-subtitle">AI-powered match probabilities from your football modelling stack.</div>
     <div class="match-header">
-        <span class="team-name">{}</span>
+        <span class="team-name">{home_team}</span>
         <span class="vs-divider">VS</span>
-        <span class="team-name">{}</span>
+        <span class="team-name">{away_team}</span>
     </div>
 </div>
-'''.format(home_team, away_team), unsafe_allow_html=True)
+''', unsafe_allow_html=True)
 
 # Generate Predictions
 with st.spinner("🔮 Generating predictions..."):
@@ -797,7 +800,12 @@ with col4:
 
 if abs(context_adj) > 0.01:
     delta = (dc_adj["P_home"] - dc_base["P_home"]) * 100
-    st.markdown(f"<p style='text-align:center; color:white; margin-top:1rem;'>💡 Context adjustment changed home win by <strong>{delta:+.1f}pp</strong></p>", unsafe_allow_html=True)
+    st.markdown(
+        f"<p style='text-align:center; color:#4b5563; margin-top:0.9rem;'>"
+        f"💡 Context adjustment changed home win by <strong>{delta:+.1f}pp</strong>"
+        f"</p>",
+        unsafe_allow_html=True
+    )
 
 st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
 
@@ -822,7 +830,7 @@ with c1:
             <span class="metric-label">Away Win</span>
             <span class="metric-value-highlight">{pct(log_probs.get("A", 0.0))}</span>
         </div>
-        <p style="margin-top:1rem; font-size:12px; color:#64748b; line-height:1.6;">
+        <p style="margin-top:1rem; font-size:12px; color:#6b7280; line-height:1.6;">
             Historical result-based prediction using team strength and 5-game form. Context-independent baseline.
         </p>
     </div>
@@ -861,7 +869,7 @@ with c2:
             <span class="metric-label">BTTS</span>
             <span class="metric-value">{pct(poisson_adj["P_BTTS"])}</span>
         </div>
-        <p style="margin-top:1rem; font-size:12px; color:#64748b; line-height:1.6;">
+        <p style="margin-top:1rem; font-size:12px; color:#6b7280; line-height:1.6;">
             Goal expectation model. Context adjustments affect xG values.
         </p>
     </div>
@@ -900,7 +908,7 @@ with c3:
             <span class="metric-label">BTTS</span>
             <span class="metric-value">{pct(dc_adj["P_BTTS"])}</span>
         </div>
-        <p style="margin-top:1rem; font-size:12px; color:#64748b; line-height:1.6;">
+        <p style="margin-top:1rem; font-size:12px; color:#6b7280; line-height:1.6;">
             Enhanced Poisson with correlation adjustment (rho={rho_hat:.3f}). Corrects low-scoring dependencies.
         </p>
     </div>
@@ -1047,7 +1055,7 @@ with st.expander("📋 Team Form & Statistics", expanded=False):
             st.warning("⚠️ Leaky defence")
     
     st.markdown("---")
-    st.markdown("### 📊 Head-to-Head")
+    st.markdown("### 📊 Head-to-Head Comparison")
     
     home_form_letters, home_form_icons, home_form_points = get_team_form(home_team)
     away_form_letters, away_form_icons, away_form_points = get_team_form(away_team)
