@@ -1,12 +1,13 @@
 """
-Premier League Match Predictor - Streamlit App (Glassmorphism Edition)
-----------------------------------------------------------------------
+Premier League Match Predictor - Streamlit App
+-----------------------------------------------
+Production version aligned with weekly_update.py pipeline.
 
-- iOS widget feel
-- Glassmorphism (blur, translucency, depth)
-- Inter font
-- Custom VS header with team form dots (R/Y/G)
-- Fully aligned with weekly_update.py outputs
+Features:
+- Three model views: Logistic, Poisson, Dixon-Coles
+- Context adjustments for injuries/form/tactics
+- Comprehensive team statistics
+- Error handling and validation
 """
 
 import streamlit as st
@@ -19,462 +20,132 @@ from datetime import datetime
 import json
 
 # ═══════════════════════════════════════════════════════════════════
-# PAGE CONFIG
+# PAGE CONFIGURATION
 # ═══════════════════════════════════════════════════════════════════
 
 st.set_page_config(
-    page_title="Premier League Predictor",
+    page_title="KB Premier League Match Predictor",
     page_icon="⚽",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="expanded"
 )
 
 # ═══════════════════════════════════════════════════════════════════
-# CSS: GLASSMORPHISM + INTER FONT + VS HEADER
+# CUSTOM STYLING
 # ═══════════════════════════════════════════════════════════════════
 
 CUSTOM_CSS = """
 <style>
-    /* Font system: Inter + system fallbacks */
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
-
-    html, body, [class*="css"] {
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+    body, .stApp { background: #F5F6FA; color:#111; font-family: Inter, system-ui; }
+    .main-title { font-size:38px; font-weight:800; color:#111; }
+    .sub-title { font-size:16px; color:#4B5563; }
+    .model-card, .stat-card, .headline-card {
+        background:#FFFFFF; border-radius:16px; padding:20px;
+        border:1px solid #E5E7EB; box-shadow:0 4px 14px rgba(0,0,0,0.08);
+        color:#111;
     }
-
-    /* Background: deep gradient for glassmorphism */
-    .stApp {
-        background: radial-gradient(circle at 0% 0%, #4f46e5 0, #111827 40%, #020617 100%) !important;
-        color: #e5e7eb;
-    }
-
-    .main .block-container {
-        padding: 1.6rem 2.2rem;
-        max-width: 1320px;
-    }
-
-    /* Base glass panel */
-    .glass-panel {
-        background: rgba(15, 23, 42, 0.55);
-        border-radius: 24px;
-        padding: 2rem 2rem 1.75rem 2rem;
-        margin-bottom: 1.8rem;
-        border: 1px solid rgba(148, 163, 184, 0.5);
-        box-shadow:
-            0 18px 45px rgba(15, 23, 42, 0.65),
-            0 0 0 1px rgba(15, 23, 42, 0.7);
-        backdrop-filter: blur(22px);
-        -webkit-backdrop-filter: blur(22px);
-    }
-
-    /* HERO */
-    .hero-section {
-        /* no composes; just use glass-panel-like styling */
-        background: rgba(15, 23, 42, 0.55);
-        border-radius: 24px;
-        padding: 2rem 2rem 1.75rem 2rem;
-        margin-bottom: 1.8rem;
-        border: 1px solid rgba(148, 163, 184, 0.5);
-        box-shadow:
-            0 18px 45px rgba(15, 23, 42, 0.65),
-            0 0 0 1px rgba(15, 23, 42, 0.7);
-        backdrop-filter: blur(22px);
-        -webkit-backdrop-filter: blur(22px);
-    }
-
-    .hero-title {
-        font-size: 30px;
-        font-weight: 800;
-        color: #f9fafb;
-        letter-spacing: -0.04em;
-        margin: 0;
-    }
-
-    .hero-subtitle {
-        font-size: 13px;
-        color: #cbd5f5;
-        font-weight: 500;
-        margin-top: 0.3rem;
-    }
-
-    /* VS header with form dots */
-    .vs-header {
-        margin-top: 1.5rem;
-        display: grid;
-        grid-template-columns: 1fr auto 1fr;
-        align-items: center;
-        gap: 1.4rem;
-    }
-
-    .vs-team-block {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 0.25rem;
-    }
-
-    .vs-team-name {
-        font-size: 20px;
-        font-weight: 700;
-        color: #e5e7eb;
-        text-align: center;
-    }
-
-    .vs-form-row {
-        display: flex;
-        align-items: center;
-        gap: 0.25rem;
-        margin-top: 0.1rem;
-    }
-
-    .form-dot {
-        width: 7px;
-        height: 7px;
-        border-radius: 999px;
-        display: inline-block;
-        box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.9);
-    }
-
-    .form-dot-win { background: #22c55e; }
-    .form-dot-draw { background: #eab308; }
-    .form-dot-loss { background: #ef4444; }
-
-    .vs-center {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
-
-    .vs-chip {
-        width: 56px;
-        height: 56px;
-        border-radius: 999px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        background: radial-gradient(circle at 30% 0%, #a5b4fc 0, #4f46e5 40%, #1d2a49 100%);
-        color: white;
-        font-weight: 800;
-        letter-spacing: 0.12em;
-        font-size: 13px;
-        text-transform: uppercase;
-        box-shadow:
-            0 0 0 1px rgba(191, 219, 254, 0.65),
-            0 16px 35px rgba(15, 23, 42, 0.8);
-    }
-
-    .vs-subtext {
-        margin-top: 0.4rem;
-        font-size: 11px;
-        color: #9ca3af;
-        text-align: center;
-    }
-
-    /* Glass cards */
-    .glass-card {
-        background: rgba(15, 23, 42, 0.58);
-        border-radius: 20px;
-        padding: 1.4rem 1.5rem;
-        border: 1px solid rgba(148, 163, 184, 0.6);
-        box-shadow:
-            0 14px 35px rgba(15, 23, 42, 0.9),
-            0 0 0 1px rgba(15, 23, 42, 0.65);
-        backdrop-filter: blur(20px);
-        -webkit-backdrop-filter: blur(20px);
-        transition: all 0.16s ease-out;
-        height: 100%;
-    }
-
-    .glass-card:hover {
-        transform: translateY(-2px);
-        box-shadow:
-            0 18px 40px rgba(15, 23, 42, 1.0),
-            0 0 0 1px rgba(15, 23, 42, 0.9);
-    }
-
-    .card-title {
-        font-size: 15px;
-        font-weight: 700;
-        color: #e5e7eb;
-        margin: 0 0 0.9rem 0;
-        display: flex;
-        align-items: center;
-        gap: 0.45rem;
-    }
-
-    .card-icon { font-size: 18px; }
-
-    /* Headline widget metrics */
-    .headline-metric {
-        background: linear-gradient(145deg, rgba(15, 23, 42, 0.8), rgba(15, 23, 42, 0.4));
-        border-radius: 18px;
-        padding: 1rem 1.1rem;
-        text-align: left;
-        box-shadow:
-            0 12px 30px rgba(15, 23, 42, 0.9),
-            0 0 0 1px rgba(15, 23, 42, 0.85);
-        border: 1px solid rgba(148, 163, 184, 0.9);
-        backdrop-filter: blur(18px);
-        -webkit-backdrop-filter: blur(18px);
-        transition: all 0.15s ease-out;
-    }
-
-    .headline-metric:hover {
-        transform: translateY(-1px);
-        box-shadow:
-            0 16px 35px rgba(15, 23, 42, 1.0),
-            0 0 0 1px rgba(15, 23, 42, 0.9);
-    }
-
-    .headline-label {
-        font-size: 11px;
-        font-weight: 600;
-        color: #9ca3af;
-        text-transform: uppercase;
-        letter-spacing: 0.11em;
-        margin-bottom: 0.25rem;
-    }
-
-    .headline-value {
-        font-size: 26px;
-        font-weight: 800;
-        color: #e5e7eb;
-    }
-
-    /* Metric rows */
-    .metric-row {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 0.52rem 0;
-        border-bottom: 1px solid rgba(148, 163, 184, 0.35);
-    }
-
-    .metric-row:last-child { border-bottom: none; }
-
-    .metric-label {
-        font-size: 13px;
-        font-weight: 500;
-        color: #cbd5f5;
-    }
-
-    .metric-value {
-        font-size: 13px;
-        font-weight: 600;
-        color: #e5e7eb;
-        padding: 0.24rem 0.7rem;
-        background: rgba(15, 23, 42, 0.7);
-        border-radius: 999px;
-        border: 1px solid rgba(148, 163, 184, 0.75);
-    }
-
-    .metric-value-highlight {
-        font-size: 13px;
-        font-weight: 700;
-        background: linear-gradient(135deg, #4f46e5, #a855f7);
-        color: #ffffff;
-        padding: 0.26rem 0.85rem;
-        border-radius: 999px;
-        box-shadow: 0 0 0 1px rgba(191, 219, 254, 0.5);
-    }
-
-    /* Sidebar */
+    .model-card h4 { color:#111; border-bottom:1px solid #E5E7EB; }
+    .model-metric-label { color:#4B5563; }
+    .metric-highlight { background:#F0F4FF; color:#1E40AF; border:1px solid #93C5FD; }
     [data-testid="stSidebar"] {
-        background: rgba(15, 23, 42, 0.85);
-        border-right: 1px solid rgba(148, 163, 184, 0.7);
-        backdrop-filter: blur(20px);
-        -webkit-backdrop-filter: blur(20px);
-        color: #e5e7eb;
+        background:#FFFFFF !important; border-right:1px solid #E5E7EB;
     }
-
-    [data-testid="stSidebar"] .stSelectbox label,
-    [data-testid="stSidebar"] .stSlider label,
-    [data-testid="stSidebar"] h1,
-    [data-testid="stSidebar"] h2,
-    [data-testid="stSidebar"] h3 {
-        color: #e5e7eb !important;
-        font-weight: 600 !important;
-    }
-
-    /* Section headers */
-    .section-header {
-        font-size: 18px;
-        font-weight: 700;
-        color: #e5e7eb;
-        margin: 1.4rem 0 1rem 0;
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-    }
-
-    .section-divider {
-        height: 1px;
-        background: linear-gradient(to right, rgba(148, 163, 184, 0.0), rgba(148, 163, 184, 0.75), rgba(148, 163, 184, 0.0));
-        margin: 1.6rem 0 1.6rem 0;
-        border: none;
-    }
-
-    /* Status badges */
-    .status-badge {
-        display: inline-block;
-        padding: 0.3rem 0.8rem;
-        border-radius: 999px;
-        font-size: 11px;
-        font-weight: 600;
-        letter-spacing: 0.03em;
-        text-transform: uppercase;
-    }
-
-    .badge-success {
-        background: linear-gradient(135deg, #22c55e, #16a34a);
-        color: #ffffff;
-        box-shadow: 0 8px 20px rgba(22, 163, 74, 0.7);
-    }
-
-    .badge-warning {
-        background: linear-gradient(135deg, #f97316, #ea580c);
-        color: #ffffff;
-        box-shadow: 0 8px 20px rgba(234, 88, 12, 0.7);
-    }
-
-    .badge-neutral {
-        background: linear-gradient(135deg, #64748b, #4b5563);
-        color: #ffffff;
-        box-shadow: 0 8px 20px rgba(15, 23, 42, 0.7);
-    }
-
-    /* Footer */
-    .footer-section {
-        background: rgba(15, 23, 42, 0.9);
-        border-radius: 18px;
-        padding: 1.4rem;
-        margin-top: 2rem;
-        text-align: center;
-        border: 1px solid rgba(148, 163, 184, 0.9);
-        box-shadow:
-            0 16px 40px rgba(15, 23, 42, 1.0),
-            0 0 0 1px rgba(15, 23, 42, 0.9);
-        backdrop-filter: blur(20px);
-        -webkit-backdrop-filter: blur(20px);
-    }
-
-    .footer-text {
-        font-size: 12px;
-        color: #cbd5f5;
-        line-height: 1.7;
-    }
-
-    /* Hide default streamlit chrome */
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-
-    /* Fade-in animation */
-    @keyframes fadeInSoft {
-        from { opacity: 0; transform: translateY(6px); }
-        to { opacity: 1; transform: translateY(0); }
-    }
-
-    .hero-section, .glass-card, .headline-metric {
-        animation: fadeInSoft 0.35s ease-out;
-    }
-
-    /* Responsive adjustments */
-    @media (max-width: 768px) {
-        .main .block-container {
-            padding: 1.1rem !important;
-        }
-
-        .hero-section {
-            padding: 1.5rem 1.3rem 1.2rem 1.3rem;
-        }
-
-        .hero-title {
-            font-size: 24px;
-        }
-
-        .vs-header {
-            grid-template-columns: 1fr;
-            gap: 0.75rem;
-        }
-
-        .vs-center {
-            order: -1;
-        }
-
-        .headline-value {
-            font-size: 22px;
-        }
-
-        .glass-card {
-            padding: 1.2rem 1.1rem;
-        }
-    }
+    [data-testid="stSidebar"] * { color:#111 !important; }
+    .footer-note { background:#FFFFFF; color:#4B5563; border-top:1px solid #E5E7EB; }
 </style>
 """
-
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
 # ═══════════════════════════════════════════════════════════════════
-# LOAD MODELS
+# LOAD MODELS & DATA WITH VALIDATION
 # ═══════════════════════════════════════════════════════════════════
 
 @st.cache_resource
 def load_models():
+    """Load all pickled models and data with comprehensive error handling"""
+    
     required_files = {
         "pipe_result_final.pkl": "Logistic regression model",
         "poisson_model.pkl": "Poisson GLM model",
         "long_df.pkl": "Match history data",
         "stats.pkl": "Team statistics",
         "rho_hat.pkl": "Dixon-Coles rho parameter",
-        "feature_cols.pkl": "Feature column order",
+        "feature_cols.pkl": "Feature column order"
     }
-
+    
     missing_files = []
     for file, desc in required_files.items():
         if not Path(file).exists():
             missing_files.append(f"• {file} ({desc})")
-
+    
     if missing_files:
         st.error("### ❌ Missing Required Model Files")
         st.error("\n".join(missing_files))
         st.error("\n**Action required:** Run `weekly_update.py` to generate all model files.")
         st.stop()
-
+    
     try:
         with open("pipe_result_final.pkl", "rb") as f:
             pipe_result = pickle.load(f)
+        
         with open("poisson_model.pkl", "rb") as f:
             poisson_model = pickle.load(f)
+        
         with open("long_df.pkl", "rb") as f:
             long_df = pickle.load(f)
+        
         with open("stats.pkl", "rb") as f:
             stats = pickle.load(f)
+        
         with open("rho_hat.pkl", "rb") as f:
             rho_hat = pickle.load(f)
-
+        
+        # Load feature columns if available (ensures correct order)
         if Path("feature_cols.pkl").exists():
             with open("feature_cols.pkl", "rb") as f:
                 feature_cols = pickle.load(f)
         else:
+            # Fallback to default order
             feature_cols = [
-                "strength_diff",
-                "defense_diff",
-                "rolling_points_diff",
-                "rolling_xG_diff",
-                "rolling_xGA_diff",
-                "rolling_GD_diff",
-                "finishing_overperf_diff",
-                "def_overperf_diff",
+                "strength_diff", "defense_diff",
+                "rolling_points_diff", "rolling_xG_diff", "rolling_xGA_diff",
+                "rolling_GD_diff", "finishing_overperf_diff", "def_overperf_diff"
             ]
-
+        
+        # Load metadata if available
         metadata = {}
         if Path("metadata.json").exists():
             with open("metadata.json", "r") as f:
                 metadata = json.load(f)
-
+        
+        # Validate data
+        if stats.empty or long_df.empty:
+            st.error("❌ Loaded data is empty. Please regenerate models.")
+            st.stop()
+        
+        # Normalize team names
         stats["Squad"] = stats["Squad"].astype(str).str.strip()
         long_df["team"] = long_df["team"].astype(str).str.strip()
-
+        
+        # Check required columns in stats
+        required_stats_cols = ["Squad", "Home_xG", "Home_xGA", "Home_MP", 
+                               "Away_xG", "Away_xGA", "Away_MP"]
+        missing_cols = [col for col in required_stats_cols if col not in stats.columns]
+        
+        if missing_cols:
+            st.error(f"❌ Stats file missing required columns: {missing_cols}")
+            st.stop()
+        
+        # Check required columns in long_df
+        required_long_cols = ["team", "Date", "rolling_points", "rolling_xg_for", 
+                              "rolling_xg_against", "rolling_GD", 
+                              "rolling_finishing_overperf", "rolling_def_overperf"]
+        missing_cols = [col for col in required_long_cols if col not in long_df.columns]
+        
+        if missing_cols:
+            st.error(f"❌ long_df missing required columns: {missing_cols}")
+            st.stop()
+        
         return {
             "pipe_result": pipe_result,
             "poisson_model": poisson_model,
@@ -482,15 +153,19 @@ def load_models():
             "stats": stats,
             "rho_hat": float(rho_hat) if not isinstance(rho_hat, float) else rho_hat,
             "feature_cols": feature_cols,
-            "metadata": metadata,
+            "metadata": metadata
         }
+    
     except Exception as e:
-        st.error("### ❌ Error Loading Models")
+        st.error(f"### ❌ Error Loading Models")
         st.error(f"```\n{str(e)}\n```")
+        st.error("Please regenerate models by running `weekly_update.py`")
         st.stop()
 
 
+# Load all models
 models = load_models()
+
 pipe_result_final = models["pipe_result"]
 poisson_model = models["poisson_model"]
 long_df = models["long_df"]
@@ -500,136 +175,105 @@ feature_cols = models["feature_cols"]
 metadata = models["metadata"]
 
 # ═══════════════════════════════════════════════════════════════════
-# HELPERS
+# HELPER FUNCTIONS
 # ═══════════════════════════════════════════════════════════════════
 
-def pct(x: float, decimals: int = 1) -> str:
+def pct(x, decimals=1):
+    """Format as percentage"""
     return f"{x * 100:.{decimals}f}%"
 
 
-def safe_division(numerator, denominator, default: float = 0.0) -> float:
+def safe_division(numerator, denominator, default=0.0):
+    """Safe division with fallback"""
     try:
         if denominator == 0:
             return default
         return numerator / denominator
-    except Exception:
+    except:
         return default
 
 
-def get_latest_team_stat(team: str, column: str, default: float = 0.0) -> float:
+def get_latest_team_stat(team, column, default=0.0):
+    """Safely get latest stat for a team from long_df"""
     try:
         team_data = long_df[long_df["team"] == team].sort_values("Date")
+        
         if team_data.empty:
             return default
+        
         latest = team_data.iloc[-1]
+        
         if column not in latest.index:
             return default
+        
         value = latest[column]
+        
         if pd.isna(value):
             return default
+        
         return float(value)
-    except Exception:
+    
+    except Exception as e:
+        st.warning(f"Error retrieving {column} for {team}: {e}")
         return default
 
 
-def get_team_strength_metrics(team: str):
+def get_team_strength_metrics(team):
+    """Get season-long strength metrics from stats file"""
     try:
         team_row = stats[stats["Squad"] == team]
+        
         if team_row.empty:
             st.error(f"❌ Team '{team}' not found in stats file")
             return None
+        
         row = team_row.iloc[0]
+        
         return {
             "att_home": safe_division(row["Home_xG"], row["Home_MP"], 0.0),
             "def_home": safe_division(row["Home_xGA"], row["Home_MP"], 0.0),
             "att_away": safe_division(row["Away_xG"], row["Away_MP"], 0.0),
-            "def_away": safe_division(row["Away_xGA"], row["Away_MP"], 0.0),
+            "def_away": safe_division(row["Away_xGA"], row["Away_MP"], 0.0)
         }
+    
     except Exception as e:
         st.error(f"Error getting strength for {team}: {e}")
         return None
 
 
-def get_team_form(team: str, n: int = 5):
+def build_feature_vector(home_team, away_team):
     """
-    Returns:
-        letters: e.g. 'WDLDW'
-        points : total points over last n
+    Build feature vector for logistic regression.
+    Must match exact feature engineering from weekly_update.py.
     """
-    try:
-        team_matches = long_df[long_df["team"] == team].sort_values("Date").tail(n)
-        letters = []
-        total_points = 0
-        for _, match in team_matches.iterrows():
-            gf = match["goals_for"]
-            ga = match["goals_against"]
-            if gf > ga:
-                letters.append("W")
-                total_points += 3
-            elif gf == ga:
-                letters.append("D")
-                total_points += 1
-            else:
-                letters.append("L")
-        return "".join(letters), total_points
-    except Exception:
-        return "", 0
-
-
-def render_form_dots_html(team: str, n: int = 5) -> str:
-    """Small R/Y/G dots summarising last n games."""
-    letters, _ = get_team_form(team, n=n)
-    if not letters:
-        return ""
-    mapping = {"W": "form-dot-win", "D": "form-dot-draw", "L": "form-dot-loss"}
-    dots = []
-    for ch in letters:
-        cls = mapping.get(ch, "form-dot-draw")
-        dots.append(f'<span class="form-dot {cls}"></span>')
-    return f'<div class="vs-form-row">{"".join(dots)}</div>'
-
-
-def get_team_position(team: str) -> str:
-    try:
-        if "Position" in stats.columns:
-            row = stats[stats["Squad"] == team]
-            if not row.empty:
-                pos = row.iloc[0]["Position"]
-                if pd.notna(pos):
-                    return str(pos)
-        return "—"
-    except Exception:
-        return "—"
-
-
-def build_feature_vector(home_team: str, away_team: str):
+    
+    # Get strength metrics
     home_strength = get_team_strength_metrics(home_team)
     away_strength = get_team_strength_metrics(away_team)
+    
     if home_strength is None or away_strength is None:
         return None
-
+    
+    # Get rolling form metrics (last 5 matches)
     home_rolling = {
         "points": get_latest_team_stat(home_team, "rolling_points"),
         "xg_for": get_latest_team_stat(home_team, "rolling_xg_for"),
         "xg_against": get_latest_team_stat(home_team, "rolling_xg_against"),
         "GD": get_latest_team_stat(home_team, "rolling_GD"),
-        "finishing_overperf": get_latest_team_stat(
-            home_team, "rolling_finishing_overperf"
-        ),
-        "def_overperf": get_latest_team_stat(home_team, "rolling_def_overperf"),
+        "finishing_overperf": get_latest_team_stat(home_team, "rolling_finishing_overperf"),
+        "def_overperf": get_latest_team_stat(home_team, "rolling_def_overperf")
     }
-
+    
     away_rolling = {
         "points": get_latest_team_stat(away_team, "rolling_points"),
         "xg_for": get_latest_team_stat(away_team, "rolling_xg_for"),
         "xg_against": get_latest_team_stat(away_team, "rolling_xg_against"),
         "GD": get_latest_team_stat(away_team, "rolling_GD"),
-        "finishing_overperf": get_latest_team_stat(
-            away_team, "rolling_finishing_overperf"
-        ),
-        "def_overperf": get_latest_team_stat(away_team, "rolling_def_overperf"),
+        "finishing_overperf": get_latest_team_stat(away_team, "rolling_finishing_overperf"),
+        "def_overperf": get_latest_team_stat(away_team, "rolling_def_overperf")
     }
-
+    
+    # Build features matching training exactly
     features = {
         "strength_diff": home_strength["att_home"] - away_strength["att_away"],
         "defense_diff": away_strength["def_away"] - home_strength["def_home"],
@@ -637,50 +281,124 @@ def build_feature_vector(home_team: str, away_team: str):
         "rolling_xG_diff": home_rolling["xg_for"] - away_rolling["xg_for"],
         "rolling_xGA_diff": home_rolling["xg_against"] - away_rolling["xg_against"],
         "rolling_GD_diff": home_rolling["GD"] - away_rolling["GD"],
-        "finishing_overperf_diff": home_rolling["finishing_overperf"]
-        - away_rolling["finishing_overperf"],
-        "def_overperf_diff": home_rolling["def_overperf"]
-        - away_rolling["def_overperf"],
+        "finishing_overperf_diff": home_rolling["finishing_overperf"] - away_rolling["finishing_overperf"],
+        "def_overperf_diff": home_rolling["def_overperf"] - away_rolling["def_overperf"]
     }
-
+    
+    # Return DataFrame with correct column order
     return pd.DataFrame([features])[feature_cols]
 
 
-def predict_logistic(home_team: str, away_team: str):
+def predict_logistic(home_team, away_team):
+    """Get logistic regression predictions (H/D/A probabilities)"""
     try:
         X = build_feature_vector(home_team, away_team)
+        
         if X is None:
             return None
+        
         probs = pipe_result_final.predict_proba(X)[0]
         classes = pipe_result_final.classes_
+        
         return dict(zip(classes, probs))
+    
     except Exception as e:
         st.error(f"Logistic prediction error: {e}")
         return None
 
 
-def get_poisson_lambdas(home_team: str, away_team: str, context_adj: float = 0.0):
+def get_poisson_lambdas(home_team, away_team, context_adj=0.0):
+    """
+    Get expected goals from Poisson model with optional context adjustment.
+    
+    Args:
+        home_team: Home team name
+        away_team: Away team name
+        context_adj: Adjustment factor (-1 to +1)
+            > 0: boost home xG, reduce away xG
+            < 0: reduce home xG, boost away xG
+    
+    Returns:
+        (lam_home_adjusted, lam_away_adjusted, lam_home_base, lam_away_base)
+    """
     try:
-        pred_df = pd.DataFrame(
-            {
-                "team": [home_team, away_team],
-                "opponent": [away_team, home_team],
-                "is_home": [1, 0],
-            }
-        )
+        # Predict base lambdas
+        pred_df = pd.DataFrame({
+            "team": [home_team, away_team],
+            "opponent": [away_team, home_team],
+            "is_home": [1, 0]
+        })
+        
         predictions = poisson_model.predict(pred_df)
         lam_home_base = float(predictions.iloc[0])
         lam_away_base = float(predictions.iloc[1])
-
+        
+        # Apply context adjustment
         lam_home_adj = max(lam_home_base * (1 + context_adj), 0.01)
         lam_away_adj = max(lam_away_base * (1 - context_adj), 0.01)
+        
         return lam_home_adj, lam_away_adj, lam_home_base, lam_away_base
+    
     except Exception as e:
         st.error(f"Poisson prediction error: {e}")
         return None
 
 
+def compute_scoreline_probabilities(lam_home, lam_away, max_goals=6, use_dc=False, rho=0.0):
+    """
+    Compute probability matrix for all scorelines.
+    
+    Args:
+        lam_home: Home team goal expectation
+        lam_away: Away team goal expectation
+        max_goals: Maximum goals to consider
+        use_dc: Whether to apply Dixon-Coles correction
+        rho: Dixon-Coles rho parameter
+    
+    Returns:
+        Dictionary with probabilities for various markets
+    """
+    
+    # Generate goal arrays
+    hg = np.arange(0, max_goals + 1)
+    ag = np.arange(0, max_goals + 1)
+    
+    # Base Poisson probabilities
+    P = np.outer(
+        poisson.pmf(hg, lam_home),
+        poisson.pmf(ag, lam_away)
+    )
+    
+    # Apply Dixon-Coles adjustment if requested
+    if use_dc and abs(rho) > 1e-6:
+        for i, h in enumerate(hg):
+            for j, a in enumerate(ag):
+                tau = dixon_coles_tau(h, a, lam_home, lam_away, rho)
+                P[i, j] *= tau
+    
+    # Normalize to sum to 1
+    P /= P.sum()
+    
+    # Calculate market probabilities
+    total_goals = hg[:, None] + ag[None, :]
+    
+    return {
+        "P_home": float(np.tril(P, -1).sum()),  # Home wins
+        "P_draw": float(np.trace(P)),            # Draws
+        "P_away": float(np.triu(P, 1).sum()),    # Away wins
+        "P_over_0_5": float(P[total_goals > 0].sum()),
+        "P_over_1_5": float(P[total_goals > 1].sum()),
+        "P_over_2_5": float(P[total_goals > 2].sum()),
+        "P_over_3_5": float(P[total_goals > 3].sum()),
+        "P_over_4_5": float(P[total_goals > 4].sum()),
+        "P_BTTS": float(P[(hg[:, None] > 0) & (ag[None, :] > 0)].sum()),
+        "P_clean_sheet_home": float(P[:, 0].sum()),
+        "P_clean_sheet_away": float(P[0, :].sum())
+    }
+
+
 def dixon_coles_tau(hg, ag, lam_h, lam_a, rho):
+    """Dixon-Coles tau adjustment for low-scoring games"""
     if hg == 0 and ag == 0:
         return 1 - (lam_h * lam_a * rho)
     elif hg == 0 and ag == 1:
@@ -693,426 +411,729 @@ def dixon_coles_tau(hg, ag, lam_h, lam_a, rho):
         return 1.0
 
 
-def compute_scoreline_probabilities(
-    lam_home: float, lam_away: float, max_goals: int = 6, use_dc: bool = False, rho: float = 0.0
-):
-    hg = np.arange(0, max_goals + 1)
-    ag = np.arange(0, max_goals + 1)
+def get_team_form(team, n=5):
+    """
+    Get last N results for a team.
+    Returns: (letters_string, icons_string, points)
+    """
+    try:
+        team_matches = long_df[long_df["team"] == team].sort_values("Date").tail(n)
+        
+        letters = []
+        icons = []
+        total_points = 0
+        
+        for _, match in team_matches.iterrows():
+            gf = match["goals_for"]
+            ga = match["goals_against"]
+            
+            if gf > ga:
+                letters.append("W")
+                icons.append("🟩")
+                total_points += 3
+            elif gf == ga:
+                letters.append("D")
+                icons.append("🟨")
+                total_points += 1
+            else:
+                letters.append("L")
+                icons.append("🟥")
+        
+        return "".join(letters), "".join(icons), total_points
+    
+    except Exception as e:
+        st.warning(f"Error getting form for {team}: {e}")
+        return "", "", 0
 
-    P = np.outer(poisson.pmf(hg, lam_home), poisson.pmf(ag, lam_away))
 
-    if use_dc and abs(rho) > 1e-6:
-        for i, h in enumerate(hg):
-            for j, a in enumerate(ag):
-                P[i, j] *= dixon_coles_tau(h, a, lam_home, lam_away, rho)
+def get_team_position(team):
+    """Get team's league position if available"""
+    try:
+        if "Position" in stats.columns:
+            team_row = stats[stats["Squad"] == team]
+            if not team_row.empty:
+                pos = team_row.iloc[0]["Position"]
+                if pd.notna(pos):
+                    return str(pos)
+        return "—"
+    except:
+        return "—"
 
-    P /= P.sum()
-    total_goals = hg[:, None] + ag[None, :]
-
-    return {
-        "P_home": float(np.tril(P, -1).sum()),
-        "P_draw": float(np.trace(P)),
-        "P_away": float(np.triu(P, 1).sum()),
-        "P_over_0_5": float(P[total_goals > 0].sum()),
-        "P_over_1_5": float(P[total_goals > 1].sum()),
-        "P_over_2_5": float(P[total_goals > 2].sum()),
-        "P_over_3_5": float(P[total_goals > 3].sum()),
-        "P_over_4_5": float(P[total_goals > 4].sum()),
-        "P_BTTS": float(P[(hg[:, None] > 0) & (ag[None, :] > 0)].sum()),
-        "P_clean_sheet_home": float(P[:, 0].sum()),
-        "P_clean_sheet_away": float(P[0, :].sum()),
-    }
 
 # ═══════════════════════════════════════════════════════════════════
-# SIDEBAR
+# SIDEBAR - MATCH SELECTION & CONTEXT
 # ═══════════════════════════════════════════════════════════════════
 
 with st.sidebar:
-    st.markdown("## ⚽ Match Setup")
-
+    st.header("⚽ Match Setup")
+    
+    # Team selection
     teams = sorted(stats["Squad"].unique())
+    
     if len(teams) == 0:
         st.error("No teams found in stats file!")
         st.stop()
-
+    
     home_team = st.selectbox("🏠 Home Team", teams, key="home")
-    away_team = st.selectbox("✈️ Away Team", teams, key="away")
-
+    away_team = st.selectbox("✈️  Away Team", teams, key="away")
+    
     st.markdown("---")
-    st.markdown("## 🎯 Match Context")
-    st.caption("Adjust for injuries, form, tactics and schedule effects.")
-
-    advanced_mode = st.checkbox("Advanced Controls", value=False)
+    
+    # Context adjustment mode
+    st.subheader("🎯 Context Adjustments")
+    
+    st.caption(
+        "Adjust predictions based on team news, form, tactics. "
+        "Affects Poisson & Dixon-Coles only (Logistic stays baseline)."
+    )
+    
+    advanced_mode = st.checkbox(
+        "Advanced Controls",
+        value=False,
+        help="Enable granular adjustments for injuries, tactics, motivation"
+    )
+    
     if not advanced_mode:
+        # Simple mode: single slider
         context_raw = st.slider(
-            "Context Adjustment",
+            "Match Context",
             min_value=-3.0,
             max_value=3.0,
             value=0.0,
             step=0.1,
-            help="Negative = Away advantage | Positive = Home advantage",
+            help=(
+                "-3 = Strong away advantage (injuries/suspensions to home team)\n"
+                "+3 = Strong home advantage (injuries/suspensions to away team)\n"
+                "0 = Neutral (no adjustments)"
+            )
         )
-        context_adj = context_raw / 10.0
+        context_adj = context_raw / 10.0  # Scale to ±0.3
+        
     else:
-        att_adj = st.slider("⚔️ Attack", -3.0, 3.0, 0.0, 0.1)
-        def_adj = st.slider("🛡️ Defense", -3.0, 3.0, 0.0, 0.1)
-        morale_adj = st.slider("💪 Morale", -3.0, 3.0, 0.0, 0.1)
+        # Advanced mode: multiple sliders
+        st.markdown("**Real life context Controls:**")
+        
+        att_adj = st.slider(
+            "⚔️ Attack",
+            -3.0, 3.0, 0.0, 0.1,
+            help="Attacking strength difference (injuries to forwards, tactics)"
+        )
+        
+        def_adj = st.slider(
+            "🛡️ Defense", 
+            -3.0, 3.0, 0.0, 0.1,
+            help="Defensive solidity difference (injuries to defenders, high line tactics)"
+        )
+        
+        morale_adj = st.slider(
+            "💪 Morale/Momentum",
+            -3.0, 3.0, 0.0, 0.1,
+            help="Psychological factors (winning streak, derby motivation, pressure)"
+        )
+        
+        # Combined adjustment (weighted)
         context_adj = (att_adj + def_adj + 0.5 * morale_adj) / 20.0
-
+    
+    # Display current adjustment
     if abs(context_adj) < 0.01:
-        st.markdown(
-            '<span class="status-badge badge-neutral">⚖️ Neutral Context</span>',
-            unsafe_allow_html=True,
-        )
+        st.success(f"**Adjustment:** Neutral (±0.00)")
     elif context_adj > 0:
-        st.markdown(
-            f'<span class="status-badge badge-success">🏠 Home +{context_adj:.2f}</span>',
-            unsafe_allow_html=True,
-        )
+        st.info(f"**Adjustment:** Home advantage ({context_adj:+.3f})")
     else:
-        st.markdown(
-            f'<span class="status-badge badge-warning">✈️ Away {context_adj:.2f}</span>',
-            unsafe_allow_html=True,
-        )
+        st.warning(f"**Adjustment:** Away advantage ({context_adj:+.3f})")
+    
+    st.markdown("---")
+    
+    # Model information
+    with st.expander("ℹ️  Model Info"):
+        if metadata:
+            st.markdown("**Last Updated:**")
+            try:
+                update_time = datetime.fromisoformat(metadata.get("update_time", ""))
+                st.text(update_time.strftime("%Y-%m-%d %H:%M UTC"))
+            except:
+                st.text("Unknown")
+            
+            st.markdown(f"**Data Range:**")
+            st.text(metadata.get("date_range", "Unknown"))
+            
+            st.markdown(f"**Teams:** {len(metadata.get('teams', []))}")
+            st.markdown(f"**Dixon-Coles ρ:** {metadata.get('rho', rho_hat):.4f}")
+        else:
+            st.text("Metadata not available")
+            st.text(f"Dixon-Coles ρ: {rho_hat:.4f}")
 
 # ═══════════════════════════════════════════════════════════════════
-# MAIN – HERO
+# MAIN AREA - PREDICTIONS
 # ═══════════════════════════════════════════════════════════════════
 
+# Validation
 if home_team == away_team:
-    st.error("### ⚠️ Please select different teams")
+    st.error("### ⚠️  Home and Away teams must be different!")
     st.stop()
 
-home_form_dots_html = render_form_dots_html(home_team)
-away_form_dots_html = render_form_dots_html(away_team)
+# Header
+st.markdown('<div class="main-title">Premier League Match Predictor</div>', unsafe_allow_html=True)
+st.markdown(
+    '<div class="sub-title">'
+    'Three model ensemble: Logistic Regression • Poisson GLM • Dixon-Coles'
+    '</div>',
+    unsafe_allow_html=True
+)
 
-hero_html = f"""
-<div class="hero-section">
-    <div class="hero-title">Premier League Predictor</div>
-    <div class="hero-subtitle">AI-powered match probabilities from your weekly modelling pipeline.</div>
-    <div class="vs-header">
-        <div class="vs-team-block">
-            <div class="vs-team-name">{home_team}</div>
-            {home_form_dots_html}
-        </div>
-        <div class="vs-center">
-            <div class="vs-chip">VS</div>
-        </div>
-        <div class="vs-team-block">
-            <div class="vs-team-name">{away_team}</div>
-            {away_form_dots_html}
-        </div>
-    </div>
-    <div class="vs-subtext">
-        Form dots: green = win, yellow = draw, red = loss (last 5 matches)
-    </div>
-</div>
-"""
+st.markdown(f"## {home_team} vs {away_team}")
+st.markdown("---")
 
-st.markdown(hero_html, unsafe_allow_html=True)
+# ───────────────────────────────────────────────────────────────────
+# GENERATE PREDICTIONS
+# ───────────────────────────────────────────────────────────────────
 
-# ═══════════════════════════════════════════════════════════════════
-# PREDICTIONS
-# ═══════════════════════════════════════════════════════════════════
-
-with st.spinner("🔮 Generating predictions..."):
+with st.spinner("Generating predictions..."):
+    # Model 1: Logistic (baseline, no adjustments)
     log_probs = predict_logistic(home_team, away_team)
+    
     if log_probs is None:
-        st.error("❌ Could not generate predictions. Check team data.")
+        st.error("❌ Could not generate logistic predictions. Check team data.")
         st.stop()
-
+    
+    # Model 2 & 3: Poisson & Dixon-Coles (with adjustments)
     lambdas = get_poisson_lambdas(home_team, away_team, context_adj=context_adj)
+    
     if lambdas is None:
-        st.error("❌ Could not generate Poisson predictions.")
+        st.error("❌ Could not generate Poisson predictions. Check team data.")
         st.stop()
-
+    
     lam_h_adj, lam_a_adj, lam_h_base, lam_a_base = lambdas
-
+    
+    # Poisson probabilities (adjusted & baseline)
     poisson_adj = compute_scoreline_probabilities(lam_h_adj, lam_a_adj, use_dc=False)
     poisson_base = compute_scoreline_probabilities(lam_h_base, lam_a_base, use_dc=False)
-
+    
+    # Dixon-Coles probabilities (adjusted & baseline)
     dc_adj = compute_scoreline_probabilities(lam_h_adj, lam_a_adj, use_dc=True, rho=rho_hat)
     dc_base = compute_scoreline_probabilities(lam_h_base, lam_a_base, use_dc=True, rho=rho_hat)
 
-# ═══════════════════════════════════════════════════════════════════
-# HEADLINE WIDGETS
-# ═══════════════════════════════════════════════════════════════════
+# ───────────────────────────────────────────────────────────────────
+# HEADLINE METRICS (DIXON-COLES ADJUSTED)
+# ───────────────────────────────────────────────────────────────────
 
-st.markdown('<div class="section-header">🎯 Headline Prediction</div>', unsafe_allow_html=True)
+st.subheader("🎯 Headline Prediction (Dixon-Coles Adjusted)")
 
 col1, col2, col3, col4 = st.columns(4)
 
 with col1:
-    st.markdown(
-        f"""
-        <div class="headline-metric">
-            <div class="headline-label">🏠 Home Win</div>
-            <div class="headline-value">{pct(dc_adj["P_home"])}</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    st.metric("🏠 Home Win", pct(dc_adj["P_home"]))
 
 with col2:
-    st.markdown(
-        f"""
-        <div class="headline-metric">
-            <div class="headline-label">🤝 Draw</div>
-            <div class="headline-value">{pct(dc_adj["P_draw"])}</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    st.metric("🤝 Draw", pct(dc_adj["P_draw"]))
 
 with col3:
-    st.markdown(
-        f"""
-        <div class="headline-metric">
-            <div class="headline-label">✈️ Away Win</div>
-            <div class="headline-value">{pct(dc_adj["P_away"])}</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    st.metric("✈️  Away Win", pct(dc_adj["P_away"]))
 
 with col4:
-    st.markdown(
-        f"""
-        <div class="headline-metric">
-            <div class="headline-label">⚽ BTTS</div>
-            <div class="headline-value">{pct(dc_adj["P_BTTS"])}</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    st.metric("⚽ BTTS", pct(dc_adj["P_BTTS"]))
 
 if abs(context_adj) > 0.01:
     delta = (dc_adj["P_home"] - dc_base["P_home"]) * 100
-    st.markdown(
-        f"<p style='text-align:center; color:#e5e7eb; margin-top:0.9rem;'>"
-        f"💡 Context adjustment changed home win by <strong>{delta:+.1f}pp</strong>"
-        f"</p>",
-        unsafe_allow_html=True,
+    st.caption(
+        f"💡 Your adjustments changed the home win probability by "
+        f"**{delta:+.1f} percentage points** vs baseline."
     )
 
-st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
+st.markdown("---")
 
-# ═══════════════════════════════════════════════════════════════════
-# MODEL CARDS
-# ═══════════════════════════════════════════════════════════════════
+# ───────────────────────────────────────────────────────────────────
+# THREE MODEL CARDS
+# ───────────────────────────────────────────────────────────────────
 
-st.markdown('<div class="section-header">📊 Model Comparison</div>', unsafe_allow_html=True)
+st.subheader("📊 Model Comparison")
 
 c1, c2, c3 = st.columns(3)
 
-# Logistic
+# MODEL 1: LOGISTIC REGRESSION
 with c1:
+    st.markdown('<div class="model-card">', unsafe_allow_html=True)
+    st.markdown("<h4>📈 Logistic Model</h4>", unsafe_allow_html=True)
+    
     st.markdown(
-        f"""
-        <div class="glass-card">
-            <div class="card-title"><span class="card-icon">📈</span> Logistic Model</div>
-            <div class="metric-row">
-                <span class="metric-label">Home Win</span>
-                <span class="metric-value-highlight">{pct(log_probs.get("H", 0.0))}</span>
-            </div>
-            <div class="metric-row">
-                <span class="metric-label">Draw</span>
-                <span class="metric-value-highlight">{pct(log_probs.get("D", 0.0))}</span>
-            </div>
-            <div class="metric-row">
-                <span class="metric-label">Away Win</span>
-                <span class="metric-value-highlight">{pct(log_probs.get("A", 0.0))}</span>
-            </div>
-            <p style="margin-top:1rem; font-size:12px; color:#e5e7eb; line-height:1.6;">
-                Historical result-based prediction using team strength and 5-game form.
-                Context-independent baseline.
-            </p>
-        </div>
-        """,
-        unsafe_allow_html=True,
+        f'<div class="model-metric-row">'
+        f'<span class="model-metric-label">Home Win</span>'
+        f'<span class="model-metric-value metric-highlight">{pct(log_probs.get("H", 0.0))}</span>'
+        f'</div>',
+        unsafe_allow_html=True
     )
+    
+    st.markdown(
+        f'<div class="model-metric-row">'
+        f'<span class="model-metric-label">Draw</span>'
+        f'<span class="model-metric-value metric-highlight">{pct(log_probs.get("D", 0.0))}</span>'
+        f'</div>',
+        unsafe_allow_html=True
+    )
+    
+    st.markdown(
+        f'<div class="model-metric-row">'
+        f'<span class="model-metric-label">Away Win</span>'
+        f'<span class="model-metric-value metric-highlight">{pct(log_probs.get("A", 0.0))}</span>'
+        f'</div>',
+        unsafe_allow_html=True
+    )
+    
+    st.markdown(
+        '<div class="sub-title" style="margin-top:12px; font-size:12px;">'
+        '🔒 <strong>Baseline prediction</strong> using historical results, '
+        'team strength, and 5-game rolling form. '
+        'Unaffected by context adjustments.'
+        '</div>',
+        unsafe_allow_html=True
+    )
+    
+    st.markdown('</div>', unsafe_allow_html=True)
 
-# Poisson
+# MODEL 2: POISSON GLM
 with c2:
+    st.markdown('<div class="model-card">', unsafe_allow_html=True)
+    st.markdown("<h4>📐 Poisson Model</h4>", unsafe_allow_html=True)
+    
     st.markdown(
-        f"""
-        <div class="glass-card">
-            <div class="card-title"><span class="card-icon">📐</span> Poisson Model</div>
-            <div class="metric-row">
-                <span class="metric-label">xG Home</span>
-                <span class="metric-value">{lam_h_adj:.2f}</span>
-            </div>
-            <div class="metric-row">
-                <span class="metric-label">xG Away</span>
-                <span class="metric-value">{lam_a_adj:.2f}</span>
-            </div>
-            <hr style="margin:0.75rem 0; border:none; border-top:1px solid rgba(148, 163, 184, 0.35);">
-            <div class="metric-row">
-                <span class="metric-label">Home Win</span>
-                <span class="metric-value">{pct(poisson_adj["P_home"])}</span>
-            </div>
-            <div class="metric-row">
-                <span class="metric-label">Draw</span>
-                <span class="metric-value">{pct(poisson_adj["P_draw"])}</span>
-            </div>
-            <div class="metric-row">
-                <span class="metric-label">Away Win</span>
-                <span class="metric-value">{pct(poisson_adj["P_away"])}</span>
-            </div>
-            <div class="metric-row">
-                <span class="metric-label">Over 2.5</span>
-                <span class="metric-value">{pct(poisson_adj["P_over_2_5"])}</span>
-            </div>
-            <div class="metric-row">
-                <span class="metric-label">BTTS</span>
-                <span class="metric-value">{pct(poisson_adj["P_BTTS"])}</span>
-            </div>
-            <p style="margin-top:1rem; font-size:12px; color:#e5e7eb; line-height:1.6;">
-                Goal expectation model. Context adjustments affect xG values.
-            </p>
-        </div>
-        """,
-        unsafe_allow_html=True,
+        f'<div class="model-metric-row">'
+        f'<span class="model-metric-label">xG Home</span>'
+        f'<span class="model-metric-value metric-highlight">{lam_h_adj:.2f}</span>'
+        f'</div>',
+        unsafe_allow_html=True
     )
+    
+    st.markdown(
+        f'<div class="model-metric-row">'
+        f'<span class="model-metric-label">xG Away</span>'
+        f'<span class="model-metric-value metric-highlight">{lam_a_adj:.2f}</span>'
+        f'</div>',
+        unsafe_allow_html=True
+    )
+    
+    st.markdown("<hr style='margin:8px 0; border-color:#374151;'>", unsafe_allow_html=True)
+    
+    st.markdown(
+        f'<div class="model-metric-row">'
+        f'<span class="model-metric-label">Home Win</span>'
+        f'<span class="model-metric-value">{pct(poisson_adj["P_home"])}</span>'
+        f'</div>',
+        unsafe_allow_html=True
+    )
+    
+    st.markdown(
+        f'<div class="model-metric-row">'
+        f'<span class="model-metric-label">Draw</span>'
+        f'<span class="model-metric-value">{pct(poisson_adj["P_draw"])}</span>'
+        f'</div>',
+        unsafe_allow_html=True
+    )
+    
+    st.markdown(
+        f'<div class="model-metric-row">'
+        f'<span class="model-metric-label">Away Win</span>'
+        f'<span class="model-metric-value">{pct(poisson_adj["P_away"])}</span>'
+        f'</div>',
+        unsafe_allow_html=True
+    )
+    
+    st.markdown("<hr style='margin:8px 0; border-color:#374151;'>", unsafe_allow_html=True)
+    
+    st.markdown(
+        f'<div class="model-metric-row">'
+        f'<span class="model-metric-label">Over 1.5</span>'
+        f'<span class="model-metric-value">{pct(poisson_adj["P_over_1_5"])}</span>'
+        f'</div>',
+        unsafe_allow_html=True
+    )
+    
+    st.markdown(
+        f'<div class="model-metric-row">'
+        f'<span class="model-metric-label">Over 2.5</span>'
+        f'<span class="model-metric-value">{pct(poisson_adj["P_over_2_5"])}</span>'
+        f'</div>',
+        unsafe_allow_html=True
+    )
+    
+    st.markdown(
+        f'<div class="model-metric-row">'
+        f'<span class="model-metric-label">BTTS</span>'
+        f'<span class="model-metric-value">{pct(poisson_adj["P_BTTS"])}</span>'
+        f'</div>',
+        unsafe_allow_html=True
+    )
+    
+    st.markdown(
+        '<div class="sub-title" style="margin-top:12px; font-size:12px;">'
+        '⚡ <strong>Goal-based prediction</strong> using expected goals. '
+        'Context sliders adjust xG up/down based on team news and form.'
+        '</div>',
+        unsafe_allow_html=True
+    )
+    
+    st.markdown('</div>', unsafe_allow_html=True)
 
-# Dixon–Coles
+# MODEL 3: DIXON-COLES
 with c3:
+    st.markdown('<div class="model-card">', unsafe_allow_html=True)
+    st.markdown("<h4>🎲 Dixon-Coles</h4>", unsafe_allow_html=True)
+    
     st.markdown(
-        f"""
-        <div class="glass-card">
-            <div class="card-title"><span class="card-icon">🎲</span> Dixon-Coles</div>
-            <div class="metric-row">
-                <span class="metric-label">Home Win</span>
-                <span class="metric-value-highlight">{pct(dc_adj["P_home"])}</span>
-            </div>
-            <div class="metric-row">
-                <span class="metric-label">Draw</span>
-                <span class="metric-value-highlight">{pct(dc_adj["P_draw"])}</span>
-            </div>
-            <div class="metric-row">
-                <span class="metric-label">Away Win</span>
-                <span class="metric-value-highlight">{pct(dc_adj["P_away"])}</span>
-            </div>
-            <hr style="margin:0.75rem 0; border:none; border-top:1px solid rgba(148, 163, 184, 0.35);">
-            <div class="metric-row">
-                <span class="metric-label">Over 1.5</span>
-                <span class="metric-value">{pct(dc_adj["P_over_1_5"])}</span>
-            </div>
-            <div class="metric-row">
-                <span class="metric-label">Over 2.5</span>
-                <span class="metric-value">{pct(dc_adj["P_over_2_5"])}</span>
-            </div>
-            <div class="metric-row">
-                <span class="metric-label">Over 3.5</span>
-                <span class="metric-value">{pct(dc_adj["P_over_3_5"])}</span>
-            </div>
-            <div class="metric-row">
-                <span class="metric-label">BTTS</span>
-                <span class="metric-value">{pct(dc_adj["P_BTTS"])}</span>
-            </div>
-            <p style="margin-top:1rem; font-size:12px; color:#e5e7eb; line-height:1.6;">
-                Enhanced Poisson with correlation adjustment (rho={rho_hat:.3f}).
-                Corrects low-scoring dependencies.
-            </p>
-        </div>
-        """,
-        unsafe_allow_html=True,
+        f'<div class="model-metric-row">'
+        f'<span class="model-metric-label">Home Win</span>'
+        f'<span class="model-metric-value metric-highlight">{pct(dc_adj["P_home"])}</span>'
+        f'</div>',
+        unsafe_allow_html=True
     )
+    
+    st.markdown(
+        f'<div class="model-metric-row">'
+        f'<span class="model-metric-label">Draw</span>'
+        f'<span class="model-metric-value metric-highlight">{pct(dc_adj["P_draw"])}</span>'
+        f'</div>',
+        unsafe_allow_html=True
+    )
+    
+    st.markdown(
+        f'<div class="model-metric-row">'
+        f'<span class="model-metric-label">Away Win</span>'
+        f'<span class="model-metric-value metric-highlight">{pct(dc_adj["P_away"])}</span>'
+        f'</div>',
+        unsafe_allow_html=True
+    )
+    
+    st.markdown("<hr style='margin:8px 0; border-color:#374151;'>", unsafe_allow_html=True)
+    
+    st.markdown(
+        f'<div class="model-metric-row">'
+        f'<span class="model-metric-label">Over 1.5</span>'
+        f'<span class="model-metric-value">{pct(dc_adj["P_over_1_5"])}</span>'
+        f'</div>',
+        unsafe_allow_html=True
+    )
+    
+    st.markdown(
+        f'<div class="model-metric-row">'
+        f'<span class="model-metric-label">Over 2.5</span>'
+        f'<span class="model-metric-value">{pct(dc_adj["P_over_2_5"])}</span>'
+        f'</div>',
+        unsafe_allow_html=True
+    )
+    
+    st.markdown(
+        f'<div class="model-metric-row">'
+        f'<span class="model-metric-label">Over 3.5</span>'
+        f'<span class="model-metric-value">{pct(dc_adj["P_over_3_5"])}</span>'
+        f'</div>',
+        unsafe_allow_html=True
+    )
+    
+    st.markdown(
+        f'<div class="model-metric-row">'
+        f'<span class="model-metric-label">BTTS</span>'
+        f'<span class="model-metric-value">{pct(dc_adj["P_BTTS"])}</span>'
+        f'</div>',
+        unsafe_allow_html=True
+    )
+    
+    st.markdown(
+        '<div class="sub-title" style="margin-top:12px; font-size:12px;">'
+        f'🔧 <strong>Enhanced Poisson</strong> with correlation adjustment (ρ={rho_hat:.3f}). '
+        'Corrects for dependency in low-scoring matches (0-0, 0-1, 1-0, 1-1).'
+        '</div>',
+        unsafe_allow_html=True
+    )
+    
+    st.markdown('</div>', unsafe_allow_html=True)
 
-st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
+st.markdown("---")
 
-# ═══════════════════════════════════════════════════════════════════
-# BETTING MARKETS
-# ═══════════════════════════════════════════════════════════════════
+# ───────────────────────────────────────────────────────────────────
+# ADDITIONAL MARKETS
+# ───────────────────────────────────────────────────────────────────
 
-st.markdown('<div class="section-header">🎰 Betting Markets</div>', unsafe_allow_html=True)
+st.subheader("Additional Markets")
 
 col_a, col_b, col_c = st.columns(3)
 
 with col_a:
-    st.markdown(
-        f"""
-        <div class="glass-card">
-            <div class="card-title"><span class="card-icon">⚽</span> Total Goals</div>
-            <div class="metric-row">
-                <span class="metric-label">Over 0.5</span>
-                <span class="metric-value">{pct(dc_adj["P_over_0_5"])}</span>
-            </div>
-            <div class="metric-row">
-                <span class="metric-label">Over 1.5</span>
-                <span class="metric-value">{pct(dc_adj["P_over_1_5"])}</span>
-            </div>
-            <div class="metric-row">
-                <span class="metric-label">Over 2.5</span>
-                <span class="metric-value">{pct(dc_adj["P_over_2_5"])}</span>
-            </div>
-            <div class="metric-row">
-                <span class="metric-label">Over 3.5</span>
-                <span class="metric-value">{pct(dc_adj["P_over_3_5"])}</span>
-            </div>
-            <div class="metric-row">
-                <span class="metric-label">Over 4.5</span>
-                <span class="metric-value">{pct(dc_adj["P_over_4_5"])}</span>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    st.markdown("**Total Goals**")
+    st.markdown(f"Over 0.5: {pct(dc_adj['P_over_0_5'])}")
+    st.markdown(f"Over 1.5: {pct(dc_adj['P_over_1_5'])}")
+    st.markdown(f"Over 2.5: {pct(dc_adj['P_over_2_5'])}")
+    st.markdown(f"Over 3.5: {pct(dc_adj['P_over_3_5'])}")
+    st.markdown(f"Over 4.5: {pct(dc_adj['P_over_4_5'])}")
 
 with col_b:
-    st.markdown(
-        f"""
-        <div class="glass-card">
-            <div class="card-title"><span class="card-icon">🎯</span> Both Teams to Score</div>
-            <div class="metric-row">
-                <span class="metric-label">BTTS Yes</span>
-                <span class="metric-value-highlight">{pct(dc_adj["P_BTTS"])}</span>
-            </div>
-            <div class="metric-row">
-                <span class="metric-label">BTTS No</span>
-                <span class="metric-value">{pct(1 - dc_adj["P_BTTS"])}</span>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    st.markdown("**Both Teams to Score**")
+    st.markdown(f"BTTS Yes: {pct(dc_adj['P_BTTS'])}")
+    st.markdown(f"BTTS No: {pct(1 - dc_adj['P_BTTS'])}")
 
 with col_c:
-    st.markdown(
-        f"""
-        <div class="glass-card">
-            <div class="card-title"><span class="card-icon">🛡️</span> Clean Sheets</div>
-            <div class="metric-row">
-                <span class="metric-label">{home_team}</span>
-                <span class="metric-value">{pct(dc_adj["P_clean_sheet_home"])}</span>
-            </div>
-            <div class="metric-row">
-                <span class="metric-label">{away_team}</span>
-                <span class="metric-value">{pct(dc_adj["P_clean_sheet_away"])}</span>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    st.markdown("**Clean Sheets**")
+    st.markdown(f"{home_team} CS: {pct(dc_adj['P_clean_sheet_home'])}")
+    st.markdown(f"{away_team} CS: {pct(dc_adj['P_clean_sheet_away'])}")
+
+st.markdown("---")
+
+# ───────────────────────────────────────────────────────────────────
+# TEAM FORM & STATISTICS
+# ───────────────────────────────────────────────────────────────────
+
+with st.expander("📋 Team Form & Statistics (Last 5 Matches)", expanded=False):
+    
+    col_home, col_away = st.columns(2)
+    
+    # Home team stats
+    with col_home:
+        st.markdown(f"### 🏠 {home_team}")
+        
+        pos = get_team_position(home_team)
+        st.markdown(f"**League Position:** {pos}")
+        
+        form_letters, form_icons, form_points = get_team_form(home_team)
+        st.markdown(f"**Form (oldest → newest):** {form_icons}")
+        st.markdown(f"**Form String:** {form_letters}")
+        st.markdown(f"**Points (last 5):** {form_points}")
+        
+        st.markdown("---")
+        
+        st.markdown("**Rolling Metrics (Last 5 Games):**")
+        
+        home_xg_for = get_latest_team_stat(home_team, "rolling_xg_for")
+        home_xg_ag = get_latest_team_stat(home_team, "rolling_xg_against")
+        home_gd = get_latest_team_stat(home_team, "rolling_GD")
+        home_fin = get_latest_team_stat(home_team, "rolling_finishing_overperf")
+        home_def = get_latest_team_stat(home_team, "rolling_def_overperf")
+        
+        st.markdown(f"- **xG For:** {home_xg_for:.2f}")
+        st.markdown(f"- **xG Against:** {home_xg_ag:.2f}")
+        st.markdown(f"- **Goal Difference:** {home_gd:+.0f}")
+        st.markdown(f"- **Finishing (G - xG):** {home_fin:+.2f}")
+        st.markdown(f"- **Defence (xGA - GA):** {home_def:+.2f}")
+        
+        if home_fin > 1:
+            st.success("💚 Overperforming xG (good finishing streak)")
+        elif home_fin < -1:
+            st.warning("⚠️ Underperforming xG (poor finishing streak)")
+        
+        if home_def > 1:
+            st.success("💚 Overperforming defence (conceding less than xGA)")
+        elif home_def < -1:
+            st.warning("⚠️ Underperforming defence (conceding more than xGA)")
+    
+    # Away team stats
+    with col_away:
+        st.markdown(f"### ✈️  {away_team}")
+        
+        pos = get_team_position(away_team)
+        st.markdown(f"**League Position:** {pos}")
+        
+        form_letters, form_icons, form_points = get_team_form(away_team)
+        st.markdown(f"**Form (oldest → newest):** {form_icons}")
+        st.markdown(f"**Form String:** {form_letters}")
+        st.markdown(f"**Points (last 5):** {form_points}")
+        
+        st.markdown("---")
+        
+        st.markdown("**Rolling Metrics (Last 5 Games):**")
+        
+        away_xg_for = get_latest_team_stat(away_team, "rolling_xg_for")
+        away_xg_ag = get_latest_team_stat(away_team, "rolling_xg_against")
+        away_gd = get_latest_team_stat(away_team, "rolling_GD")
+        away_fin = get_latest_team_stat(away_team, "rolling_finishing_overperf")
+        away_def = get_latest_team_stat(away_team, "rolling_def_overperf")
+        
+        st.markdown(f"- **xG For:** {away_xg_for:.2f}")
+        st.markdown(f"- **xG Against:** {away_xg_ag:.2f}")
+        st.markdown(f"- **Goal Difference:** {away_gd:+.0f}")
+        st.markdown(f"- **Finishing (G - xG):** {away_fin:+.2f}")
+        st.markdown(f"- **Defence (xGA - GA):** {away_def:+.2f}")
+        
+        if away_fin > 1:
+            st.success("💚 Overperforming xG (good finishing streak)")
+        elif away_fin < -1:
+            st.warning("⚠️ Underperforming xG (poor finishing streak)")
+        
+        if away_def > 1:
+            st.success("💚 Overperforming defence (conceding less than xGA)")
+        elif away_def < -1:
+            st.warning("⚠️ Underperforming defence (conceding more than xGA)")
+    
+    # Comparison table
+    st.markdown("---")
+    st.markdown("### 📊 Head-to-Head Comparison")
+    
+    comparison_df = pd.DataFrame({
+        "Metric": [
+            "xG For (last 5)",
+            "xG Against (last 5)",
+            "Goal Difference (last 5)",
+            "Points (last 5)",
+            "Finishing Over/Under",
+            "Defence Over/Under"
+        ],
+        home_team: [
+            f"{home_xg_for:.2f}",
+            f"{home_xg_ag:.2f}",
+            f"{home_gd:+.0f}",
+            f"{form_points}",
+            f"{home_fin:+.2f}",
+            f"{home_def:+.2f}"
+        ],
+        away_team: [
+            f"{away_xg_for:.2f}",
+            f"{away_xg_ag:.2f}",
+            f"{away_gd:+.0f}",
+            f"{form_points}",
+            f"{away_fin:+.2f}",
+            f"{away_def:+.2f}"
+        ]
+    })
+    
+    st.dataframe(comparison_df, use_container_width=True, hide_index=True)
+    
+    st.caption(
+        "💡 **Interpretation:**\n"
+        "- **Finishing > 0:** Scoring more goals than xG suggests (good finishing/luck)\n"
+        "- **Finishing < 0:** Scoring fewer goals than xG suggests (poor finishing/bad luck)\n"
+        "- **Defence > 0:** Conceding fewer goals than xGA suggests (good defending/goalkeeping)\n"
+        "- **Defence < 0:** Conceding more goals than xGA suggests (poor defending)"
     )
 
-st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
+# ───────────────────────────────────────────────────────────────────
+# MODEL AGREEMENT ANALYSIS
+# ───────────────────────────────────────────────────────────────────
 
-# ═══════════════════════════════════════════════════════════════════
-# FOOTER
-# ═══════════════════════════════════════════════════════════════════
+with st.expander("🔍 Model Agreement Analysis", expanded=False):
+    
+    st.markdown("### Model Consensus")
+    
+    # Calculate which outcome each model favors
+    log_favorite = max(log_probs, key=log_probs.get)
+    poisson_favorite = max(["H", "D", "A"], 
+                          key=lambda x: poisson_adj["P_home"] if x == "H" 
+                                       else (poisson_adj["P_draw"] if x == "D" 
+                                             else poisson_adj["P_away"]))
+    dc_favorite = max(["H", "D", "A"],
+                     key=lambda x: dc_adj["P_home"] if x == "H"
+                                  else (dc_adj["P_draw"] if x == "D"
+                                        else dc_adj["P_away"]))
+    
+    outcome_names = {"H": "Home Win", "D": "Draw", "A": "Away Win"}
+    
+    st.markdown(f"- **Logistic Model:** {outcome_names[log_favorite]} ({pct(log_probs.get(log_favorite, 0))})")
+    st.markdown(f"- **Poisson Model:** {outcome_names[poisson_favorite]}")
+    st.markdown(f"- **Dixon-Coles:** {outcome_names[dc_favorite]} ({pct(dc_adj['P_home'] if dc_favorite == 'H' else (dc_adj['P_draw'] if dc_favorite == 'D' else dc_adj['P_away']))})")
+    
+    # Check agreement
+    all_agree = (log_favorite == poisson_favorite == dc_favorite)
+    
+    if all_agree:
+        st.markdown(
+            '<div class="success-box">'
+            f'✅ <strong>Strong Consensus:</strong> All three models agree on <strong>{outcome_names[log_favorite]}</strong>. '
+            'This suggests higher confidence in the prediction.'
+            '</div>',
+            unsafe_allow_html=True
+        )
+    else:
+        st.markdown(
+            '<div class="warning-box">'
+            '⚠️ <strong>Model Disagreement:</strong> Models have different favorites. '
+            'Consider this uncertainty when making decisions.'
+            '</div>',
+            unsafe_allow_html=True
+        )
+    
+    st.markdown("---")
+    
+    # Probability comparison table
+    st.markdown("### Probability Comparison Across Models")
+    
+    prob_comparison = pd.DataFrame({
+        "Outcome": ["Home Win", "Draw", "Away Win"],
+        "Logistic": [
+            pct(log_probs.get("H", 0)),
+            pct(log_probs.get("D", 0)),
+            pct(log_probs.get("A", 0))
+        ],
+        "Poisson": [
+            pct(poisson_adj["P_home"]),
+            pct(poisson_adj["P_draw"]),
+            pct(poisson_adj["P_away"])
+        ],
+        "Dixon-Coles": [
+            pct(dc_adj["P_home"]),
+            pct(dc_adj["P_draw"]),
+            pct(dc_adj["P_away"])
+        ]
+    })
+    
+    st.dataframe(prob_comparison, use_container_width=True, hide_index=True)
+    
+    st.caption(
+        "💡 Large discrepancies between models indicate uncertainty. "
+        "The logistic model is based purely on match outcomes, while "
+        "Poisson/Dixon-Coles are based on goal expectations."
+    )
+
+# ───────────────────────────────────────────────────────────────────
+# CONTEXT IMPACT ANALYSIS
+# ───────────────────────────────────────────────────────────────────
+
+if abs(context_adj) > 0.01:
+    with st.expander("⚙️ Context Adjustment Impact", expanded=False):
+        
+        st.markdown("### How Adjustments Changed Predictions")
+        
+        st.markdown(f"**Adjustment Factor:** {context_adj:+.3f}")
+        
+        # xG changes
+        st.markdown("**Expected Goals Impact:**")
+        st.markdown(f"- Home xG: {lam_h_base:.2f} → {lam_h_adj:.2f} ({lam_h_adj - lam_h_base:+.2f})")
+        st.markdown(f"- Away xG: {lam_a_base:.2f} → {lam_a_adj:.2f} ({lam_a_adj - lam_a_base:+.2f})")
+        
+        st.markdown("---")
+        
+        # Probability changes
+        st.markdown("**Match Outcome Impact (Dixon-Coles):**")
+        
+        delta_h = (dc_adj["P_home"] - dc_base["P_home"]) * 100
+        delta_d = (dc_adj["P_draw"] - dc_base["P_draw"]) * 100
+        delta_a = (dc_adj["P_away"] - dc_base["P_away"]) * 100
+        
+        st.markdown(f"- Home Win: {pct(dc_base['P_home'])} → {pct(dc_adj['P_home'])} ({delta_h:+.1f}pp)")
+        st.markdown(f"- Draw: {pct(dc_base['P_draw'])} → {pct(dc_adj['P_draw'])} ({delta_d:+.1f}pp)")
+        st.markdown(f"- Away Win: {pct(dc_base['P_away'])} → {pct(dc_adj['P_away'])} ({delta_a:+.1f}pp)")
+        
+        st.caption("pp = percentage points")
+        
+        st.markdown("---")
+        
+        # Goals market impact
+        st.markdown("**Goals Market Impact:**")
+        
+        delta_btts = (dc_adj["P_BTTS"] - dc_base["P_BTTS"]) * 100
+        delta_o25 = (dc_adj["P_over_2_5"] - dc_base["P_over_2_5"]) * 100
+        
+        st.markdown(f"- BTTS: {pct(dc_base['P_BTTS'])} → {pct(dc_adj['P_BTTS'])} ({delta_btts:+.1f}pp)")
+        st.markdown(f"- Over 2.5: {pct(dc_base['P_over_2_5'])} → {pct(dc_adj['P_over_2_5'])} ({delta_o25:+.1f}pp)")
+
+# ───────────────────────────────────────────────────────────────────
+# FOOTER & DISCLAIMERS
+# ───────────────────────────────────────────────────────────────────
+
+st.markdown("---")
 
 st.markdown(
-    """
-<div class="footer-section">
-    <div class="footer-text">
-        <strong>⚠️ Disclaimer</strong><br>
-        Predictions are statistical models based on historical data. Football is inherently unpredictable.<br>
-        Many factors (injuries, weather, motivation, referee decisions) cannot be fully modelled.<br><br>
-        <strong>📊 Models:</strong> Logistic (outcome-based) • Poisson (goal-based) • Dixon-Coles (correlation-adjusted)<br>
-        <strong>🔄 Updates:</strong> Models retrained weekly with latest match data
-    </div>
-</div>
-""",
-    unsafe_allow_html=True,
+    '<div class="footer-note">'
+    '⚠️ <strong>Important Disclaimer:</strong><br>'
+    'These predictions are statistical models based on historical data and should not be used as the sole basis for betting or decision-making. '
+    'As you know, football matches are inherently unpredictable, and many factors (injuries, referee decisions, weather, motivation) cannot be fully captured by models.<br><br>'
+    '📊 <strong>Model Updates:</strong> Models are retrained weekly with latest match data to maintain accuracy.<br>'
+    '🔧 <strong>Context Adjustments:</strong> Use the sidebar sliders to incorporate team news and match-specific factors.<br>'
+    '📈 <strong>Model Types:</strong> Logistic (outcome-based), Poisson (goal-based), Dixon-Coles (correlation-adjusted).'
+    '</div>',
+    unsafe_allow_html=True
 )
-
