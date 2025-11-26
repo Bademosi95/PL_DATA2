@@ -748,6 +748,13 @@ with st.sidebar:
     away_team = st.selectbox("✈️  Away Team", teams, key="away")
     
     st.markdown("---")
+    st.subheader("📈 Market Odds (Manual Entry)")
+
+    odds_home = st.number_input("Home Win Odds", min_value=1.01, value=2.20, step=0.01)
+    odds_draw = st.number_input("Draw Odds", min_value=1.01, value=3.30, step=0.01)
+    odds_away = st.number_input("Away Win Odds", min_value=1.01, value=3.10, step=0.01)
+    
+    st.markdown("---")
     
     # Context adjustment mode
     st.subheader("🎯 Context Adjustments")
@@ -903,6 +910,16 @@ with st.spinner("Generating predictions..."):
     # Dixon-Coles probabilities (adjusted & baseline)
     dc_adj = compute_scoreline_probabilities(lam_h_adj, lam_a_adj, use_dc=True, rho=rho_hat)
     dc_base = compute_scoreline_probabilities(lam_h_base, lam_a_base, use_dc=True, rho=rho_hat)
+    
+    # Convert betting odds to implied probabilities (decimal odds -> prob)
+    imp_home = 1.0 / odds_home
+    imp_draw = 1.0 / odds_draw
+    imp_away = 1.0 / odds_away
+
+    # Calculate betting edge: model probability - implied probability
+    edge_home = dc_adj["P_home"] - imp_home
+    edge_draw = dc_adj["P_draw"] - imp_draw
+    edge_away = dc_adj["P_away"] - imp_away
 
 # ───────────────────────────────────────────────────────────────────
 # HEADLINE METRICS (DIXON-COLES ADJUSTED)
@@ -1136,6 +1153,50 @@ with c3:
     )
     
     st.markdown('</div>', unsafe_allow_html=True)
+
+st.markdown("---")
+
+# ───────────────────────────────────────────────────────────────────
+# VALUE EDGE ANALYSIS
+# ───────────────────────────────────────────────────────────────────
+
+st.subheader("💰 Value Edge vs Market Odds")
+
+edge_df = pd.DataFrame({
+    "Outcome": ["Home", "Draw", "Away"],
+    "Model Probability": [
+        pct(dc_adj["P_home"]),
+        pct(dc_adj["P_draw"]),
+        pct(dc_adj["P_away"])
+    ],
+    "Market Probability": [
+        pct(imp_home),
+        pct(imp_draw),
+        pct(imp_away)
+    ],
+    "Edge": [
+        f"{edge_home*100:+.2f}%",
+        f"{edge_draw*100:+.2f}%",
+        f"{edge_away*100:+.2f}%"
+    ]
+})
+
+def highlight_edge(val):
+    if isinstance(val, str) and val.startswith('+'):
+        return 'background-color: #D1FAE5; color: #065F46; font-weight: 600;'
+    if isinstance(val, str) and val.startswith('-'):
+        return 'color: #991B1B;'
+    return ''
+
+st.dataframe(edge_df.style.applymap(highlight_edge), use_container_width=True, hide_index=True)
+
+best_edge = max(edge_home, edge_draw, edge_away)
+best_outcome = ["Home", "Draw", "Away"][np.argmax([edge_home, edge_draw, edge_away])]
+
+if best_edge > 0:
+    st.success(f"Best value opportunity: **{best_outcome}** ({best_edge*100:+.2f}%)")
+else:
+    st.warning("No positive edge — market appears efficient for this match.")
 
 st.markdown("---")
 
