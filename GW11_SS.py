@@ -19,6 +19,17 @@ from pathlib import Path
 from datetime import datetime
 import json
 
+def get_model_update_version():
+    """Return update timestamp from metadata.json to bust Streamlit cache."""
+    try:
+        if Path("metadata.json").exists():
+            with open("metadata.json", "r") as f:
+                metadata = json.load(f)
+                return metadata.get("update_time", "0")
+    except:
+        pass
+    return str(datetime.utcnow())
+
 # ═══════════════════════════════════════════════════════════════════
 # PAGE CONFIGURATION
 # ═══════════════════════════════════════════════════════════════════
@@ -320,7 +331,7 @@ st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 # ═══════════════════════════════════════════════════════════════════
 
 @st.cache_resource
-def load_models():
+def load_models(_version):
     """Load all pickled models and data with comprehensive error handling"""
     
     required_files = {
@@ -423,7 +434,7 @@ def load_models():
 
 
 # Load all models
-models = load_models()
+models = load_models(get_model_update_version())
 
 pipe_result_final = models["pipe_result"]
 poisson_model = models["poisson_model"]
