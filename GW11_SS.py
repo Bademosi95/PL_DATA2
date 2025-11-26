@@ -456,13 +456,6 @@ rho_hat = models["rho_hat"]
 feature_cols = models["feature_cols"]
 metadata = models["metadata"]
 
-# Global variable safety initialization
-imp_home = imp_draw = imp_away = 0.0
-edge_home = edge_draw = edge_away = 0.0
-overround = 1.0
-scaled_kelly_home = scaled_kelly_draw = scaled_kelly_away = 0.0
-stake_home = stake_draw = stake_away = 0.0
-
 last_update_dt, age_days = get_data_age(metadata)
 
 
@@ -768,13 +761,6 @@ with st.sidebar:
     
     home_team = st.selectbox("🏠 Home Team", teams, key="home")
     away_team = st.selectbox("✈️  Away Team", teams, key="away")
-
-
-st.subheader("📈 Market Odds (Manual Entry)")
-odds_home = st.number_input("Home Win Odds", min_value=1.01, value=2.20, step=0.01)
-odds_draw = st.number_input("Draw Odds", min_value=1.01, value=3.30, step=0.01)
-odds_away = st.number_input("Away Win Odds", min_value=1.01, value=3.10, step=0.01)
-
     
     st.markdown("---")
     
