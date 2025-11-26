@@ -19,12 +19,6 @@ from pathlib import Path
 from datetime import datetime
 import json
 
-def kelly_fraction(prob, odds):
-    b = odds - 1
-    q = 1 - prob
-    return (prob * (b + 1) - 1) / b
-
-
 def get_model_update_version():
     """Return update timestamp from metadata.json to bust Streamlit cache."""
     try:
@@ -754,17 +748,6 @@ with st.sidebar:
     away_team = st.selectbox("✈️  Away Team", teams, key="away")
     
     st.markdown("---")
-    st.subheader("📈 Market Odds (Manual Entry)")
-
-    st.subheader("💰 Bankroll Settings")
-    bankroll = st.number_input("Current bankroll (£)", min_value=1.0, value=1000.0, step=50.0)
-
-
-    odds_home = st.number_input("Home Win Odds", min_value=1.01, value=2.20, step=0.01)
-    odds_draw = st.number_input("Draw Odds", min_value=1.01, value=3.30, step=0.01)
-    odds_away = st.number_input("Away Win Odds", min_value=1.01, value=3.10, step=0.01)
-    
-    st.markdown("---")
     
     # Context adjustment mode
     st.subheader("🎯 Context Adjustments")
@@ -920,26 +903,6 @@ with st.spinner("Generating predictions..."):
     # Dixon-Coles probabilities (adjusted & baseline)
     dc_adj = compute_scoreline_probabilities(lam_h_adj, lam_a_adj, use_dc=True, rho=rho_hat)
     dc_base = compute_scoreline_probabilities(lam_h_base, lam_a_base, use_dc=True, rho=rho_hat)
-    
-    # Convert betting odds to implied probabilities (decimal odds -> prob)
-    imp_home = 1.0 / odds_home
-    imp_draw = 1.0 / odds_draw
-    imp_away = 1.0 / odds_away
-
-    # Calculate betting edge: model probability - implied probability
-    edge_home = dc_adj["P_home"] - imp_home
-    edge_draw = dc_adj["P_draw"] - imp_draw
-    edge_away = dc_adj["P_away"] - imp_away
-    # Kelly fraction calculations
-    kelly_home = kelly_fraction(dc_adj["P_home"], odds_home)
-    kelly_draw = kelly_fraction(dc_adj["P_draw"], odds_draw)
-    kelly_away = kelly_fraction(dc_adj["P_away"], odds_away)
-
-    # Kelly bet amounts in £
-    stake_home = max(0, kelly_home) * bankroll
-    stake_draw = max(0, kelly_draw) * bankroll
-    stake_away = max(0, kelly_away) * bankroll
-
 
 # ───────────────────────────────────────────────────────────────────
 # HEADLINE METRICS (DIXON-COLES ADJUSTED)
@@ -1173,85 +1136,6 @@ with c3:
     )
     
     st.markdown('</div>', unsafe_allow_html=True)
-
-st.markdown("---")
-
-# ───────────────────────────────────────────────────────────────────
-# VALUE EDGE ANALYSIS
-# ───────────────────────────────────────────────────────────────────
-
-st.subheader("💰 Value Edge vs Market Odds")
-# ─────────────────────────────────────────────
-st.subheader("📊 Kelly Optimal Stake Sizing")
-
-kelly_df = pd.DataFrame({
-    "Outcome": ["Home", "Draw", "Away"],
-    "Edge": [
-        f"{edge_home*100:+.2f}%",
-        f"{edge_draw*100:+.2f}%",
-        f"{edge_away*100:+.2f}%"
-    ],
-    "Kelly % of Bankroll": [
-        f"{max(0,kelly_home)*100:.2f}%",
-        f"{max(0,kelly_draw)*100:.2f}%",
-        f"{max(0,kelly_away)*100:.2f}%"
-    ],
-    "Stake (£)": [
-        f"£{stake_home:.2f}",
-        f"£{stake_draw:.2f}",
-        f"£{stake_away:.2f}"
-    ]
-})
-
-st.dataframe(kelly_df, use_container_width=True, hide_index=True)
-
-best_stake = max(stake_home, stake_draw, stake_away)
-best_index = np.argmax([stake_home, stake_draw, stake_away])
-best_side = ["Home", "Draw", "Away"][best_index]
-
-if best_stake > 0:
-    st.success(f"Recommended Bet: **{best_side}** — £{best_stake:.2f} (Kelly sizing)")
-else:
-    st.warning("Kelly suggests NO BET on this match.")
-
-st.markdown("---")
-
-
-edge_df = pd.DataFrame({
-    "Outcome": ["Home", "Draw", "Away"],
-    "Model Probability": [
-        pct(dc_adj["P_home"]),
-        pct(dc_adj["P_draw"]),
-        pct(dc_adj["P_away"])
-    ],
-    "Market Probability": [
-        pct(imp_home),
-        pct(imp_draw),
-        pct(imp_away)
-    ],
-    "Edge": [
-        f"{edge_home*100:+.2f}%",
-        f"{edge_draw*100:+.2f}%",
-        f"{edge_away*100:+.2f}%"
-    ]
-})
-
-def highlight_edge(val):
-    if isinstance(val, str) and val.startswith('+'):
-        return 'background-color: #D1FAE5; color: #065F46; font-weight: 600;'
-    if isinstance(val, str) and val.startswith('-'):
-        return 'color: #991B1B;'
-    return ''
-
-st.dataframe(edge_df.style.applymap(highlight_edge), use_container_width=True, hide_index=True)
-
-best_edge = max(edge_home, edge_draw, edge_away)
-best_outcome = ["Home", "Draw", "Away"][np.argmax([edge_home, edge_draw, edge_away])]
-
-if best_edge > 0:
-    st.success(f"Best value opportunity: **{best_outcome}** ({best_edge*100:+.2f}%)")
-else:
-    st.warning("No positive edge — market appears efficient for this match.")
 
 st.markdown("---")
 
