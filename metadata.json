@@ -1,0 +1,30 @@
+{
+  "update_time": "2025-11-26T00:19:38.117495",
+  "n_matches": 120,
+  "date_range": "2025-08-15 to 2025-11-24",
+  "teams": [
+    "Arsenal",
+    "Aston Villa",
+    "Bournemouth",
+    "Brentford",
+    "Brighton",
+    "Burnley",
+    "Chelsea",
+    "Crystal Palace",
+    "Everton",
+    "Fulham",
+    "Leeds United",
+    "Liverpool",
+    "Manchester City",
+    "Manchester Utd",
+    "Newcastle Utd",
+    "Nott'ham Forest",
+    "Sunderland",
+    "Tottenham",
+    "West Ham",
+    "Wolves"
+  ],
+  "rolling_window": 5,
+  "dc_years_back": 3,
+  "rho": 0.14007506603524442
+}
