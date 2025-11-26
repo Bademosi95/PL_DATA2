@@ -456,12 +456,12 @@ rho_hat = models["rho_hat"]
 feature_cols = models["feature_cols"]
 metadata = models["metadata"]
 
-# Prevent NameError by always defining these before usage
+# Global variable safety initialization
 imp_home = imp_draw = imp_away = 0.0
 edge_home = edge_draw = edge_away = 0.0
-stake_home = stake_draw = stake_away = 0.0
 overround = 1.0
-
+scaled_kelly_home = scaled_kelly_draw = scaled_kelly_away = 0.0
+stake_home = stake_draw = stake_away = 0.0
 
 last_update_dt, age_days = get_data_age(metadata)
 
@@ -1184,10 +1184,9 @@ st.markdown("---")
 # VALUE EDGE & STAKING ANALYSIS
 # ───────────────────────────────────────────────────────────────────
 
-if home_team and away_team:
-    st.subheader("💰 Value Edge vs Market Odds")
+st.subheader("💰 Value Edge vs Market Odds")
 
-    edge_df = pd.DataFrame({
+edge_df = pd.DataFrame({
     "Outcome": ["Home", "Draw", "Away"],
     "Model Probability": [
         pct(dc_adj["P_home"]),
@@ -1213,7 +1212,7 @@ def highlight_edge(val):
         return 'color: #991B1B;'
     return ''
 
-    st.dataframe(edge_df.style.applymap(highlight_edge), use_container_width=True, hide_index=True)
+st.dataframe(edge_df.style.applymap(highlight_edge), use_container_width=True, hide_index=True)
 st.caption(f"Bookmaker overround: {(overround - 1.0) * 100:+.2f}%")
 
 st.subheader("📊 Kelly Optimal Stake Sizing")
