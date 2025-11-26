@@ -20,31 +20,21 @@ from datetime import datetime
 import json
 
 def kelly_fraction(prob, odds):
-    """Return raw Kelly fraction (can be scaled down by a user-selected factor)."""
+    b = odds - 1
+    q = 1 - prob
+    return (prob * (b + 1) - 1) / b
+
+
+def get_model_update_version():
+    """Return update timestamp from metadata.json to bust Streamlit cache."""
     try:
-        b = odds - 1.0
-        if b <= 0:
-            return 0.0
-        q = 1.0 - prob
-        return (prob * (b + 1.0) - 1.0) / b
-    except Exception:
-        return 0.0
-
-
-def get_data_age(metadata):
-    """Return (datetime, age_days) for the model metadata, or (None, None) if unknown."""
-    try:
-        ts = metadata.get("update_time")
-        if not ts:
-            return None, None
-        dt = datetime.fromisoformat(ts)
-        from datetime import timezone
-        dt_utc = dt.replace(tzinfo=timezone.utc)
-        age_days = (datetime.now(timezone.utc) - dt_utc).days
-        return dt_utc, age_days
-    except Exception:
-        return None, None
-
+        if Path("metadata.json").exists():
+            with open("metadata.json", "r") as f:
+                metadata = json.load(f)
+                return metadata.get("update_time", "0")
+    except:
+        pass
+    return str(datetime.utcnow())
 
 # ═══════════════════════════════════════════════════════════════════
 # PAGE CONFIGURATION
@@ -347,7 +337,7 @@ st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 # ═══════════════════════════════════════════════════════════════════
 
 @st.cache_resource
-def load_models():
+def load_models(_version):
     """Load all pickled models and data with comprehensive error handling"""
     
     required_files = {
@@ -386,13 +376,17 @@ def load_models():
         with open("rho_hat.pkl", "rb") as f:
             rho_hat = pickle.load(f)
         
-        # Load feature columns (must exist to ensure correct order)
+        # Load feature columns if available (ensures correct order)
         if Path("feature_cols.pkl").exists():
             with open("feature_cols.pkl", "rb") as f:
                 feature_cols = pickle.load(f)
         else:
-            st.error("feature_cols.pkl is missing. Please rerun the training/export pipeline so the app uses the exact feature order from training.")
-            st.stop()
+            # Fallback to default order
+            feature_cols = [
+                "strength_diff", "defense_diff",
+                "rolling_points_diff", "rolling_xG_diff", "rolling_xGA_diff",
+                "rolling_GD_diff", "finishing_overperf_diff", "def_overperf_diff"
+            ]
         
         # Load metadata if available
         metadata = {}
@@ -446,7 +440,7 @@ def load_models():
 
 
 # Load all models
-models = load_models()
+models = load_models(get_model_update_version())
 
 pipe_result_final = models["pipe_result"]
 poisson_model = models["poisson_model"]
@@ -455,9 +449,6 @@ stats = models["stats"]
 rho_hat = models["rho_hat"]
 feature_cols = models["feature_cols"]
 metadata = models["metadata"]
-
-last_update_dt, age_days = get_data_age(metadata)
-
 
 # ═══════════════════════════════════════════════════════════════════
 # HELPER FUNCTIONS
@@ -763,6 +754,17 @@ with st.sidebar:
     away_team = st.selectbox("✈️  Away Team", teams, key="away")
     
     st.markdown("---")
+    st.subheader("📈 Market Odds (Manual Entry)")
+
+    st.subheader("💰 Bankroll Settings")
+    bankroll = st.number_input("Current bankroll (£)", min_value=1.0, value=1000.0, step=50.0)
+
+
+    odds_home = st.number_input("Home Win Odds", min_value=1.01, value=2.20, step=0.01)
+    odds_draw = st.number_input("Draw Odds", min_value=1.01, value=3.30, step=0.01)
+    odds_away = st.number_input("Away Win Odds", min_value=1.01, value=3.10, step=0.01)
+    
+    st.markdown("---")
     
     # Context adjustment mode
     st.subheader("🎯 Context Adjustments")
@@ -793,12 +795,6 @@ with st.sidebar:
             )
         )
         context_adj = context_raw / 10.0  # Scale to ±0.3
-
-        st.caption(
-            "Guideline examples: -3 ≈ home missing several key starters; "
-            "-1 ≈ mild away edge (one important injury/rotation); "
-            "+1 ≈ mild home edge; +3 ≈ away heavily rotated or low motivation."
-        )
         
     else:
         # Advanced mode: multiple sliders
@@ -863,19 +859,6 @@ if home_team == away_team:
     st.error("### ⚠️  Home and Away teams must be different!")
     st.stop()
 
-# Data freshness banner
-if last_update_dt is not None:
-    st.info(
-        f"**Data last updated:** {last_update_dt.strftime('%Y-%m-%d %H:%M UTC')} "
-        f"({age_days} days ago)"
-    )
-    if age_days is not None and age_days >= 7:
-        st.warning(
-            "⚠️ The data is over a week old. Predictions may not reflect current form or injuries."
-        )
-else:
-    st.warning("⚠️ Data update time unknown – please rerun `weekly_update.py` to refresh models.")
-
 # Header
 st.markdown('<div class="main-title">Premier League Match Predictor</div>', unsafe_allow_html=True)
 st.markdown(
@@ -937,6 +920,26 @@ with st.spinner("Generating predictions..."):
     # Dixon-Coles probabilities (adjusted & baseline)
     dc_adj = compute_scoreline_probabilities(lam_h_adj, lam_a_adj, use_dc=True, rho=rho_hat)
     dc_base = compute_scoreline_probabilities(lam_h_base, lam_a_base, use_dc=True, rho=rho_hat)
+    
+    # Convert betting odds to implied probabilities (decimal odds -> prob)
+    imp_home = 1.0 / odds_home
+    imp_draw = 1.0 / odds_draw
+    imp_away = 1.0 / odds_away
+
+    # Calculate betting edge: model probability - implied probability
+    edge_home = dc_adj["P_home"] - imp_home
+    edge_draw = dc_adj["P_draw"] - imp_draw
+    edge_away = dc_adj["P_away"] - imp_away
+    # Kelly fraction calculations
+    kelly_home = kelly_fraction(dc_adj["P_home"], odds_home)
+    kelly_draw = kelly_fraction(dc_adj["P_draw"], odds_draw)
+    kelly_away = kelly_fraction(dc_adj["P_away"], odds_away)
+
+    # Kelly bet amounts in £
+    stake_home = max(0, kelly_home) * bankroll
+    stake_draw = max(0, kelly_draw) * bankroll
+    stake_away = max(0, kelly_away) * bankroll
+
 
 # ───────────────────────────────────────────────────────────────────
 # HEADLINE METRICS (DIXON-COLES ADJUSTED)
@@ -1174,10 +1177,45 @@ with c3:
 st.markdown("---")
 
 # ───────────────────────────────────────────────────────────────────
-# VALUE EDGE & STAKING ANALYSIS
+# VALUE EDGE ANALYSIS
 # ───────────────────────────────────────────────────────────────────
 
 st.subheader("💰 Value Edge vs Market Odds")
+# ─────────────────────────────────────────────
+st.subheader("📊 Kelly Optimal Stake Sizing")
+
+kelly_df = pd.DataFrame({
+    "Outcome": ["Home", "Draw", "Away"],
+    "Edge": [
+        f"{edge_home*100:+.2f}%",
+        f"{edge_draw*100:+.2f}%",
+        f"{edge_away*100:+.2f}%"
+    ],
+    "Kelly % of Bankroll": [
+        f"{max(0,kelly_home)*100:.2f}%",
+        f"{max(0,kelly_draw)*100:.2f}%",
+        f"{max(0,kelly_away)*100:.2f}%"
+    ],
+    "Stake (£)": [
+        f"£{stake_home:.2f}",
+        f"£{stake_draw:.2f}",
+        f"£{stake_away:.2f}"
+    ]
+})
+
+st.dataframe(kelly_df, use_container_width=True, hide_index=True)
+
+best_stake = max(stake_home, stake_draw, stake_away)
+best_index = np.argmax([stake_home, stake_draw, stake_away])
+best_side = ["Home", "Draw", "Away"][best_index]
+
+if best_stake > 0:
+    st.success(f"Recommended Bet: **{best_side}** — £{best_stake:.2f} (Kelly sizing)")
+else:
+    st.warning("Kelly suggests NO BET on this match.")
+
+st.markdown("---")
+
 
 edge_df = pd.DataFrame({
     "Outcome": ["Home", "Draw", "Away"],
@@ -1206,44 +1244,14 @@ def highlight_edge(val):
     return ''
 
 st.dataframe(edge_df.style.applymap(highlight_edge), use_container_width=True, hide_index=True)
-st.caption(f"Bookmaker overround: {(overround - 1.0) * 100:+.2f}%")
 
-st.subheader("📊 Kelly Optimal Stake Sizing")
+best_edge = max(edge_home, edge_draw, edge_away)
+best_outcome = ["Home", "Draw", "Away"][np.argmax([edge_home, edge_draw, edge_away])]
 
-kelly_df = pd.DataFrame({
-    "Outcome": ["Home", "Draw", "Away"],
-    "Edge": [
-        f"{edge_home*100:+.2f}%",
-        f"{edge_draw*100:+.2f}%",
-        f"{edge_away*100:+.2f}%"
-    ],
-    "Kelly % of Bankroll": [
-        f"{scaled_kelly_home*100:.2f}%",
-        f"{scaled_kelly_draw*100:.2f}%",
-        f"{scaled_kelly_away*100:.2f}%"
-    ],
-    "Stake (£)": [
-        f"£{stake_home:.2f}",
-        f"£{stake_draw:.2f}",
-        f"£{stake_away:.2f}"
-    ]
-})
-
-st.dataframe(kelly_df, use_container_width=True, hide_index=True)
-
-best_stake = max(stake_home, stake_draw, stake_away)
-best_index = np.argmax([stake_home, stake_draw, stake_away])
-best_side = ["Home", "Draw", "Away"][best_index]
-
-if best_stake > 0:
-    st.success(f"Recommended bet: **{best_side}** — £{best_stake:.2f} (fractional Kelly, capped).")
+if best_edge > 0:
+    st.success(f"Best value opportunity: **{best_outcome}** ({best_edge*100:+.2f}%)")
 else:
-    st.warning("Kelly suggests NO BET on this match given your settings.")
-
-st.caption(
-    "⚠️ Kelly is an aggressive staking framework. Even with a good model, full Kelly can "
-    "lead to large drawdowns. Using 25–50% Kelly and sensible caps helps manage risk."
-)
+    st.warning("No positive edge — market appears efficient for this match.")
 
 st.markdown("---")
 
@@ -1290,10 +1298,10 @@ with st.expander("📋 Team Form & Statistics (Last 5 Matches)", expanded=False)
         pos = get_team_position(home_team)
         st.markdown(f"**League Position:** {pos}")
         
-        form_letters, form_icons, home_points_5 = get_team_form(home_team)
+        form_letters, form_icons, form_points = get_team_form(home_team)
         st.markdown(f"**Form (oldest → newest):** {form_icons}")
         st.markdown(f"**Form String:** {form_letters}")
-        st.markdown(f"**Points (last 5):** {home_points_5}")
+        st.markdown(f"**Points (last 5):** {form_points}")
         
         st.markdown("---")
         
@@ -1328,10 +1336,10 @@ with st.expander("📋 Team Form & Statistics (Last 5 Matches)", expanded=False)
         pos = get_team_position(away_team)
         st.markdown(f"**League Position:** {pos}")
         
-        form_letters, form_icons, away_points_5 = get_team_form(away_team)
+        form_letters, form_icons, form_points = get_team_form(away_team)
         st.markdown(f"**Form (oldest → newest):** {form_icons}")
         st.markdown(f"**Form String:** {form_letters}")
-        st.markdown(f"**Points (last 5):** {away_points_5}")
+        st.markdown(f"**Points (last 5):** {form_points}")
         
         st.markdown("---")
         
@@ -1376,7 +1384,7 @@ with st.expander("📋 Team Form & Statistics (Last 5 Matches)", expanded=False)
             f"{home_xg_for:.2f}",
             f"{home_xg_ag:.2f}",
             f"{home_gd:+.0f}",
-            f"{home_points_5}",
+            f"{form_points}",
             f"{home_fin:+.2f}",
             f"{home_def:+.2f}"
         ],
@@ -1384,7 +1392,7 @@ with st.expander("📋 Team Form & Statistics (Last 5 Matches)", expanded=False)
             f"{away_xg_for:.2f}",
             f"{away_xg_ag:.2f}",
             f"{away_gd:+.0f}",
-            f"{away_points_5}",
+            f"{form_points}",
             f"{away_fin:+.2f}",
             f"{away_def:+.2f}"
         ]
