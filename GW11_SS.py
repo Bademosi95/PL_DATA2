@@ -19,6 +19,12 @@ from pathlib import Path
 from datetime import datetime
 import json
 
+def kelly_fraction(prob, odds):
+    b = odds - 1
+    q = 1 - prob
+    return (prob * (b + 1) - 1) / b
+
+
 def get_model_update_version():
     """Return update timestamp from metadata.json to bust Streamlit cache."""
     try:
@@ -750,6 +756,10 @@ with st.sidebar:
     st.markdown("---")
     st.subheader("📈 Market Odds (Manual Entry)")
 
+    st.subheader("💰 Bankroll Settings")
+    bankroll = st.number_input("Current bankroll (£)", min_value=1.0, value=1000.0, step=50.0)
+
+
     odds_home = st.number_input("Home Win Odds", min_value=1.01, value=2.20, step=0.01)
     odds_draw = st.number_input("Draw Odds", min_value=1.01, value=3.30, step=0.01)
     odds_away = st.number_input("Away Win Odds", min_value=1.01, value=3.10, step=0.01)
@@ -920,6 +930,16 @@ with st.spinner("Generating predictions..."):
     edge_home = dc_adj["P_home"] - imp_home
     edge_draw = dc_adj["P_draw"] - imp_draw
     edge_away = dc_adj["P_away"] - imp_away
+    # Kelly fraction calculations
+    kelly_home = kelly_fraction(dc_adj["P_home"], odds_home)
+    kelly_draw = kelly_fraction(dc_adj["P_draw"], odds_draw)
+    kelly_away = kelly_fraction(dc_adj["P_away"], odds_away)
+
+    # Kelly bet amounts in £
+    stake_home = max(0, kelly_home) * bankroll
+    stake_draw = max(0, kelly_draw) * bankroll
+    stake_away = max(0, kelly_away) * bankroll
+
 
 # ───────────────────────────────────────────────────────────────────
 # HEADLINE METRICS (DIXON-COLES ADJUSTED)
@@ -1161,6 +1181,41 @@ st.markdown("---")
 # ───────────────────────────────────────────────────────────────────
 
 st.subheader("💰 Value Edge vs Market Odds")
+# ─────────────────────────────────────────────
+st.subheader("📊 Kelly Optimal Stake Sizing")
+
+kelly_df = pd.DataFrame({
+    "Outcome": ["Home", "Draw", "Away"],
+    "Edge": [
+        f"{edge_home*100:+.2f}%",
+        f"{edge_draw*100:+.2f}%",
+        f"{edge_away*100:+.2f}%"
+    ],
+    "Kelly % of Bankroll": [
+        f"{max(0,kelly_home)*100:.2f}%",
+        f"{max(0,kelly_draw)*100:.2f}%",
+        f"{max(0,kelly_away)*100:.2f}%"
+    ],
+    "Stake (£)": [
+        f"£{stake_home:.2f}",
+        f"£{stake_draw:.2f}",
+        f"£{stake_away:.2f}"
+    ]
+})
+
+st.dataframe(kelly_df, use_container_width=True, hide_index=True)
+
+best_stake = max(stake_home, stake_draw, stake_away)
+best_index = np.argmax([stake_home, stake_draw, stake_away])
+best_side = ["Home", "Draw", "Away"][best_index]
+
+if best_stake > 0:
+    st.success(f"Recommended Bet: **{best_side}** — £{best_stake:.2f} (Kelly sizing)")
+else:
+    st.warning("Kelly suggests NO BET on this match.")
+
+st.markdown("---")
+
 
 edge_df = pd.DataFrame({
     "Outcome": ["Home", "Draw", "Away"],
