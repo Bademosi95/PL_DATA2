@@ -768,6 +768,13 @@ with st.sidebar:
     
     home_team = st.selectbox("🏠 Home Team", teams, key="home")
     away_team = st.selectbox("✈️  Away Team", teams, key="away")
+
+
+st.subheader("📈 Market Odds (Manual Entry)")
+odds_home = st.number_input("Home Win Odds", min_value=1.01, value=2.20, step=0.01)
+odds_draw = st.number_input("Draw Odds", min_value=1.01, value=3.30, step=0.01)
+odds_away = st.number_input("Away Win Odds", min_value=1.01, value=3.10, step=0.01)
+
     
     st.markdown("---")
     
