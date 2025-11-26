@@ -6,7 +6,7 @@ from scipy.stats import poisson
 from pathlib import Path
 from datetime import datetime, timedelta
 import json
-import plotly.graph_objects as go # Added for visuals
+import plotly.graph_objects as go
 
 # ═══════════════════════════════════════════════════════════════════
 # PAGE CONFIGURATION
@@ -25,7 +25,7 @@ st.set_page_config(
 
 CUSTOM_CSS = """
 <style>
-    /* GLOBAL APP STYLING - Sofascore Light Vibe */
+    /* GLOBAL APP STYLING */
     body, .stApp {
         background: #F5F7FB;
         color: #111827;
@@ -53,13 +53,8 @@ CUSTOM_CSS = """
     
     .team-name-header { font-size: 28px; font-weight: 800; color: #111827; }
     
-    /* CARDS */
-    .metric-card {
-        background: white; border: 1px solid #E5E7EB; 
-        border-radius: 12px; padding: 15px;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-        text-align: center;
-    }
+    /* FORM BADGES */
+    .form-icon { font-size: 14px; margin-right: 2px; }
 
     /* FRESHNESS BADGES */
     .badge-fresh { background-color: #d1fae5; color: #065f46; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; }
@@ -86,13 +81,7 @@ def safe_float(val):
         return 0.0
 
 def kelly_fraction_safe(prob, odds, fraction=0.25):
-    """
-    Calculate Fractional Kelly Criterion.
-    Args:
-        prob: Model probability (0-1)
-        odds: Decimal odds
-        fraction: Kelly multiplier (0.25, 0.5, 1.0)
-    """
+    """Calculate Fractional Kelly Criterion."""
     if odds <= 1: return 0.0
     b = odds - 1
     q = 1 - prob
@@ -103,7 +92,6 @@ def check_data_freshness(metadata):
     """Analyze metadata to return freshness status."""
     try:
         update_str = metadata.get("update_time", str(datetime.now()))
-        # Handle various date formats if necessary, assuming ISO for now
         if "T" in update_str:
             update_dt = datetime.fromisoformat(update_str)
         else:
@@ -129,7 +117,6 @@ def load_models():
     """Load pickled models with strict feature validation."""
     required = ["pipe_result_final.pkl", "poisson_model.pkl", "long_df.pkl", "stats.pkl", "rho_hat.pkl", "feature_cols.pkl"]
     
-    # Check existence
     missing = [f for f in required if not Path(f).exists()]
     if missing:
         st.error(f"❌ Critical files missing: {', '.join(missing)}")
@@ -141,7 +128,6 @@ def load_models():
             with open(f, "rb") as file:
                 data[f.replace(".pkl", "")] = pickle.load(file)
         
-        # Load Metadata safely
         if Path("metadata.json").exists():
             with open("metadata.json", "r") as f:
                 data["metadata"] = json.load(f)
@@ -159,7 +145,7 @@ poisson_model = models["poisson_model"]
 long_df = models["long_df"]
 stats = models["stats"]
 rho_hat = safe_float(models["rho_hat"])
-feature_cols = models["feature_cols"] # Strict ordering
+feature_cols = models["feature_cols"]
 metadata = models["metadata"]
 
 # Normalize names
@@ -167,14 +153,10 @@ stats["Squad"] = stats["Squad"].astype(str).str.strip()
 long_df["team"] = long_df["team"].astype(str).str.strip()
 
 # ═══════════════════════════════════════════════════════════════════
-# CORE CALCULATION LOGIC
+# DATA RETRIEVAL LOGIC (Restored Functionality)
 # ═══════════════════════════════════════════════════════════════════
 
 def get_latest_team_stat(team, column):
-    """
-    Returns np.nan if data is missing, rather than 0.0.
-    This prevents 'Zero' being interpreted as 'Average'.
-    """
     try:
         team_data = long_df[long_df["team"] == team].sort_values("Date")
         if team_data.empty: return np.nan
@@ -183,10 +165,46 @@ def get_latest_team_stat(team, column):
     except:
         return np.nan
 
-def build_feature_vector(home, away):
-    """Build feature vector enforcing strict column order."""
+def get_team_form(team, n=5):
+    """Restored: Get last N results (W/D/L) and icons."""
     try:
-        # Strength Metrics
+        team_matches = long_df[long_df["team"] == team].sort_values("Date").tail(n)
+        icons = []
+        letters = []
+        points = 0
+        
+        for _, match in team_matches.iterrows():
+            gf = match["goals_for"]
+            ga = match["goals_against"]
+            if gf > ga:
+                icons.append("🟩")
+                letters.append("W")
+                points += 3
+            elif gf == ga:
+                icons.append("🟨")
+                letters.append("D")
+                points += 1
+            else:
+                icons.append("🟥")
+                letters.append("L")
+                
+        return "".join(icons), "".join(letters), points
+    except Exception as e:
+        return "—", "—", 0
+
+def get_team_position(team):
+    """Restored: Get league position from stats file."""
+    try:
+        if "Position" in stats.columns:
+            row = stats[stats["Squad"] == team]
+            if not row.empty:
+                return str(row.iloc[0]["Position"])
+        return "—"
+    except:
+        return "—"
+
+def build_feature_vector(home, away):
+    try:
         h_stats = stats[stats["Squad"] == home].iloc[0]
         a_stats = stats[stats["Squad"] == away].iloc[0]
         
@@ -195,15 +213,11 @@ def build_feature_vector(home, away):
         att_a = a_stats["Away_xG"] / a_stats["Away_MP"]
         def_a = a_stats["Away_xGA"] / a_stats["Away_MP"]
 
-        # Rolling Metrics
         def get_roll(t, k): return get_latest_team_stat(t, k)
         
-        # Calculate diffs
         feats = {}
-        # NOTE: We use .get() with fillna(0) ONLY for the model prediction step 
-        # because Sklearn cannot handle NaNs.
         feats["strength_diff"] = att_h - att_a
-        feats["defense_diff"] = def_a - def_h # Inverted as per standard logic
+        feats["defense_diff"] = def_a - def_h
         feats["rolling_points_diff"] = (get_roll(home, "rolling_points") or 0) - (get_roll(away, "rolling_points") or 0)
         feats["rolling_xG_diff"] = (get_roll(home, "rolling_xg_for") or 0) - (get_roll(away, "rolling_xg_for") or 0)
         feats["rolling_xGA_diff"] = (get_roll(home, "rolling_xg_against") or 0) - (get_roll(away, "rolling_xg_against") or 0)
@@ -211,20 +225,16 @@ def build_feature_vector(home, away):
         feats["finishing_overperf_diff"] = (get_roll(home, "rolling_finishing_overperf") or 0) - (get_roll(away, "rolling_finishing_overperf") or 0)
         feats["def_overperf_diff"] = (get_roll(home, "rolling_def_overperf") or 0) - (get_roll(away, "rolling_def_overperf") or 0)
 
-        # Enforce Order
-        df = pd.DataFrame([feats])
-        return df[feature_cols] # Will error if columns missing, which is GOOD (safety)
+        return pd.DataFrame([feats])[feature_cols]
     except Exception as e:
         st.error(f"Feature Engineering Error: {e}")
         return None
 
 def compute_probs(lam_h, lam_a, rho):
-    """Vectorized Dixon-Coles Probability Matrix."""
     max_g = 6
     hg, ag = np.meshgrid(np.arange(max_g+1), np.arange(max_g+1), indexing='ij')
     P = poisson.pmf(hg, lam_h) * poisson.pmf(ag, lam_a)
     
-    # DC Adjustment
     if abs(rho) > 0:
         tau = np.ones_like(P)
         tau[0,0] = 1 - (lam_h * lam_a * rho)
@@ -232,8 +242,8 @@ def compute_probs(lam_h, lam_a, rho):
         tau[1,0] = 1 + (lam_a * rho)
         tau[1,1] = 1 - rho
         P = P * tau
-        P = np.maximum(P, 0) # Clip negatives
-        P = P / P.sum() # Renormalize
+        P = np.maximum(P, 0)
+        P = P / P.sum()
         
     return {
         "H": np.sum(np.tril(P, -1)),
@@ -247,7 +257,6 @@ def compute_probs(lam_h, lam_a, rho):
 # ═══════════════════════════════════════════════════════════════════
 
 with st.sidebar:
-    # 1. DATA FRESHNESS INDICATOR
     status, badge_class, msg = check_data_freshness(metadata)
     st.markdown(f"""
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
@@ -259,46 +268,30 @@ with st.sidebar:
     st.header("⚽ Match Setup")
     teams = sorted(stats["Squad"].unique())
     home_team = st.selectbox("🏠 Home Team", teams, index=0)
-    # 7. Validation: remove home team from away list
     away_teams_filtered = [t for t in teams if t != home_team]
     away_team = st.selectbox("✈️ Away Team", away_teams_filtered, index=0)
 
     st.divider()
     
-    # 2. IMPROVED BETTING INPUTS
     st.subheader("💰 Bankroll Management")
     bankroll = st.number_input("Bankroll (£)", value=1000.0, step=50.0)
+    max_stake_pct = st.slider("Max Stake Cap (%)", 1, 10, 5)
     
-    # Max Stake Safety Cap
-    max_stake_pct = st.slider("Max Stake Cap (%)", 1, 10, 5, help="Never bet more than X% of bankroll on one game.")
-    
-    # Fractional Kelly
-    kelly_mode = st.selectbox(
-        "Kelly Aggressiveness", 
-        ["Quarter (Recommended)", "Half", "Full"],
-        index=0,
-        help="Full Kelly is mathematically optimal for growth but highly volatile. Quarter Kelly reduces variance."
-    )
+    kelly_mode = st.selectbox("Kelly Aggressiveness", ["Quarter (Recommended)", "Half", "Full"], index=0)
     kelly_multiplier = {"Quarter (Recommended)": 0.25, "Half": 0.5, "Full": 1.0}[kelly_mode]
 
     st.caption("Market Odds (Decimal)")
     c1, c2, c3 = st.columns(3)
-    odds_h = c1.number_input("Home", 2.20)
-    odds_d = c2.number_input("Draw", 3.30)
-    odds_a = c3.number_input("Away", 3.10)
+    # FIX: Min value set to 1.01 to prevent zeros
+    odds_h = c1.number_input("Home", min_value=1.01, value=2.20)
+    odds_d = c2.number_input("Draw", min_value=1.01, value=3.30)
+    odds_a = c3.number_input("Away", min_value=1.01, value=3.10)
     
     st.divider()
 
-    # 3. CONTEXT EXPLANATION
     st.subheader("🎯 Context Adjustments")
-    with st.expander("❓ What do these sliders do?"):
-        st.markdown("""
-        **Adjust xG (Expected Goals) based on news:**
-        * **+0.1:** Minor advantage (e.g., Home team rested).
-        * **+0.2:** Moderate (e.g., Star striker returns).
-        * **+0.5:** Major (e.g., Opponent playing youth team).
-        * **Negative:** Shift advantage to the Away team.
-        """)
+    with st.expander("❓ Help"):
+        st.write("Positive values = Home Advantage. Negative = Away Advantage.")
         
     context_raw = st.slider("Home Advantage Shift", -0.5, 0.5, 0.0, 0.05)
 
@@ -306,7 +299,6 @@ with st.sidebar:
 # MAIN PREDICTION ENGINE
 # ═══════════════════════════════════════════════════════════════════
 
-# Header
 st.markdown(f"""
 <div class="headline-card">
     <span class="team-name-header">{home_team}</span>
@@ -317,35 +309,23 @@ st.markdown(f"""
 
 if st.button("Generate Prediction", type="primary", use_container_width=True):
     
-    # A. LOGISTIC MODEL
+    # 1. RUN MODELS
     feat_vec = build_feature_vector(home_team, away_team)
     if feat_vec is not None:
         log_probs = pipe_result_final.predict_proba(feat_vec)[0]
         log_res = dict(zip(pipe_result_final.classes_, log_probs))
     else:
-        st.error("Could not build features.")
         st.stop()
 
-    # B. POISSON/DC MODEL
     p_df = pd.DataFrame({"team": [home_team, away_team], "opponent": [away_team, home_team], "is_home": [1, 0]})
     base_lambdas = poisson_model.predict(p_df)
-    lam_h = float(base_lambdas.iloc[0]) * np.exp(context_raw) # Exponential scaling for safety
+    lam_h = float(base_lambdas.iloc[0]) * np.exp(context_raw)
     lam_a = float(base_lambdas.iloc[1]) * np.exp(-context_raw)
     
     dc_res = compute_probs(lam_h, lam_a, rho_hat)
 
-    # C. MONTE CARLO SIMULATION (For Uncertainty)
-    sim_h = poisson.rvs(lam_h, size=1000)
-    sim_a = poisson.rvs(lam_a, size=1000)
-    sim_diff = sim_h - sim_a
-    sim_home_win = np.mean(sim_diff > 0)
-    
-    # ═══════════════════════════════════════════════════════════════════
-    # RESULTS DISPLAY
-    # ═══════════════════════════════════════════════════════════════════
-    
-    # 1. PROBABILITY CARDS
-    st.subheader("📊 Model Probabilities")
+    # 2. PROBABILITY CARDS
+    st.subheader("📊 Prediction Analysis")
     col1, col2, col3 = st.columns(3)
     
     with col1:
@@ -355,19 +335,20 @@ if st.button("Generate Prediction", type="primary", use_container_width=True):
     with col3:
         st.metric("Away Win", pct(dc_res["A"]), delta=f"{pct(dc_res['A'] - (1/odds_a))} Edge" if dc_res['A'] > 1/odds_a else None)
 
-    # 2. BETTING ANALYSIS (KELLY & MARGIN)
-    st.divider()
-    st.subheader("💰 Value Analysis")
+    # 3. CONSENSUS CHECK
+    models_agree = False
+    log_fav = max(log_res, key=log_res.get) # H, D, or A
+    dc_fav = "H" if dc_res["H"] == max(dc_res["H"], dc_res["D"], dc_res["A"]) else ("A" if dc_res["A"] == max(dc_res["H"], dc_res["D"], dc_res["A"]) else "D")
     
-    # Calculate Bookie Margin
-    bookie_margin = (1/odds_h + 1/odds_d + 1/odds_a) - 1
-    
-    k_col1, k_col2 = st.columns(2)
-    
-    with k_col1:
-        st.info(f"🏦 **Bookmaker Margin:** {pct(bookie_margin)}\n\nThis is the 'house edge' you must overcome.")
+    if log_fav == dc_fav:
+        st.success(f"✅ **Consensus:** Both Logistic and Goal Models favor **{home_team if log_fav == 'H' else (away_team if log_fav == 'A' else 'Draw')}**.")
+    else:
+        st.warning("⚠️ **Disagreement:** Models favor different outcomes. Proceed with caution.")
 
-    # Kelly Calculation
+    # 4. VALUE ANALYSIS
+    st.divider()
+    st.subheader("💰 Value & Staking")
+    
     best_edge = -999
     best_bet = None
     best_stake = 0
@@ -379,55 +360,67 @@ if st.button("Generate Prediction", type="primary", use_container_width=True):
             best_bet = outcome
             f_kelly = kelly_fraction_safe(prob, odds, kelly_multiplier)
             raw_stake = f_kelly * bankroll
-            # Apply Max Cap
             max_allowed = bankroll * (max_stake_pct / 100.0)
             best_stake = min(raw_stake, max_allowed)
 
-    with k_col2:
+    k1, k2 = st.columns(2)
+    with k1:
         if best_edge > 0 and best_stake > 0:
-            st.success(f"**Recommended Bet:** {best_bet} @ {odds:.2f}\n\n"
-                       f"**Stake:** £{best_stake:.2f} ({best_stake/bankroll:.1%} of bank)\n"
-                       f"**Edge:** {pct(best_edge)}")
+            st.success(f"**Recommended Bet:** {best_bet} @ {odds:.2f}\n\n**Stake:** £{best_stake:.2f} ({best_stake/bankroll:.1%} of bank)")
         else:
-            st.warning("**No Value Bet Found**\n\nMarket odds are too efficient given your model's confidence.")
+            st.warning("No Value Bet Found. Odds are too efficient.")
+            
+    with k2:
+        margin = (1/odds_h + 1/odds_d + 1/odds_a) - 1
+        st.info(f"**Bookie Margin:** {pct(margin)}\n\n(The 'house edge' you are fighting against)")
 
-    # 3. STATS & VISUALS (HANDLING MISSING DATA)
+    # 5. STATS & VISUALS (WITH RESTORED FORM)
     st.divider()
-    
-    tab1, tab2 = st.tabs(["📈 Team Stats", "🎲 Simulation Spread"])
+    tab1, tab2 = st.tabs(["📈 Detailed Stats", "🎲 Goal Simulation"])
     
     with tab1:
-        def format_stat(val, is_pct=False):
-            if pd.isna(val): return "N/A"
-            return f"{val:+.2f}"
-            
+        # Fetch Form Data
+        h_icons, h_lets, h_pts = get_team_form(home_team)
+        a_icons, a_lets, a_pts = get_team_form(away_team)
+        h_pos = get_team_position(home_team)
+        a_pos = get_team_position(away_team)
+
+        def format_stat(val):
+            return f"{val:+.2f}" if pd.notna(val) else "N/A"
+
+        # Create DataFrame for display
         stats_data = {
-            "Metric": ["xG (Roll 5)", "xGA (Roll 5)", "Goal Diff (Roll 5)", "Finishing Luck"],
+            "Metric": ["League Position", "Recent Form (Last 5)", "Points (Last 5)", "xG (Roll 5)", "xGA (Roll 5)", "Finishing Luck"],
             home_team: [
+                h_pos, 
+                f"{h_icons}", 
+                h_pts,
                 format_stat(get_latest_team_stat(home_team, "rolling_xg_for")),
                 format_stat(get_latest_team_stat(home_team, "rolling_xg_against")),
-                format_stat(get_latest_team_stat(home_team, "rolling_GD")),
                 format_stat(get_latest_team_stat(home_team, "rolling_finishing_overperf"))
             ],
             away_team: [
+                a_pos, 
+                f"{a_icons}", 
+                a_pts,
                 format_stat(get_latest_team_stat(away_team, "rolling_xg_for")),
                 format_stat(get_latest_team_stat(away_team, "rolling_xg_against")),
-                format_stat(get_latest_team_stat(away_team, "rolling_GD")),
                 format_stat(get_latest_team_stat(away_team, "rolling_finishing_overperf"))
             ]
         }
         st.table(pd.DataFrame(stats_data))
-        st.caption("*N/A indicates missing historical data. 'Finishing Luck' > 0 means team scores more than xG implies.*")
+        st.caption("Finishing Luck > 0 implies scoring more than xG suggests.")
 
     with tab2:
-        #         # Monte Carlo Visualization
+        # Monte Carlo
+        sim_h = poisson.rvs(lam_h, size=1000)
+        sim_a = poisson.rvs(lam_a, size=1000)
+        
         fig = go.Figure()
-        fig.add_trace(go.Histogram(x=sim_h, name=home_team, opacity=0.75, marker_color='blue'))
-        fig.add_trace(go.Histogram(x=sim_a, name=away_team, opacity=0.75, marker_color='red'))
-        fig.update_layout(barmode='overlay', title="Simulated Goal Distribution (1000 Matches)", 
-                          xaxis_title="Goals Scored", yaxis_title="Frequency")
+        fig.add_trace(go.Histogram(x=sim_h, name=home_team, opacity=0.75, marker_color='#3B82F6'))
+        fig.add_trace(go.Histogram(x=sim_a, name=away_team, opacity=0.75, marker_color='#EF4444'))
+        fig.update_layout(barmode='overlay', title="Goal Distribution (Simulated)", height=350)
         st.plotly_chart(fig, use_container_width=True)
-        st.caption("This chart helps visualize the uncertainty. Overlap indicates a higher chance of a Draw.")
 
 else:
-    st.info("👈 Adjust settings in the sidebar and click **Generate Prediction**.")
+    st.info("👈 Select teams and click **Generate Prediction**.")
