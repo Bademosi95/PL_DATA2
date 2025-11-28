@@ -817,7 +817,7 @@ def render_data_freshness_banner(metadata_dict):
     st.markdown(
         f'<div class="{box_class}">'
         f'{label}: last update <strong>{update_dt.strftime("%Y-%m-%d %H:%M UTC")}</strong> '
-        f'(~{age_days} day(s) ago).'
+        f'(~{age_days} day(s) ago). Run <code>weekly_update.py</code> for newest data.'
         '</div>',
         unsafe_allow_html=True
     )
@@ -1376,7 +1376,7 @@ else:
 st.markdown(
     '<div class="warning-box">'
     '⚠️ <strong>Kelly risk notice:</strong> Full Kelly is highly aggressive and can lead to '
-    'large drawdowns even with a positive edge. This model applies fractional Kelly and a hard '
+    'large drawdowns even with a positive edge. This tool applies fractional Kelly and a hard '
     'stake cap, but you remain responsible for your overall risk management.'
     '</div>',
     unsafe_allow_html=True
