@@ -15,6 +15,7 @@ import pandas as pd
 import numpy as np
 import pickle
 from scipy.stats import poisson
+from scipy.optimize import minimize
 from pathlib import Path
 from datetime import datetime, timezone
 import json
@@ -26,6 +27,72 @@ def kelly_fraction(prob, odds):
     q = 1.0 - prob
     # classic Kelly for binary outcome; here we use 'prob' vs break-even
     return (prob * (b + 1.0) - 1.0) / b
+
+
+
+def kelly_3way(probs, odds):
+    """
+    Proper Kelly optimisation for a 3-way mutually exclusive market (H/D/A).
+
+    Args:
+        probs: np.array of shape (3,) for [p_home, p_draw, p_away]
+        odds:  np.array of shape (3,) for decimal odds [o_home, o_draw, o_away]
+
+    Returns:
+        np.array of optimal Kelly fractions f (size 3), such that:
+        - f_i >= 0
+        - sum(f_i) <= 1
+    """
+    probs = np.asarray(probs, dtype=float)
+    odds = np.asarray(odds, dtype=float)
+    b = odds - 1.0  # net returns
+
+    # Guard against degenerate inputs
+    if np.any(probs < 0) or np.any(odds <= 1.0) or probs.sum() <= 0:
+        return np.zeros(3)
+
+    probs = probs / probs.sum()  # normalise
+
+    def neg_expected_log_growth(f):
+        """Negative expected log growth to be minimised."""
+        f = np.asarray(f)
+        total_f = np.sum(f)
+        # Soft feasibility check
+        if total_f > 1.0 + 1e-8 or np.any(f < -1e-8):
+            return 1e6
+
+        expected_log = 0.0
+        for i in range(3):
+            # Wealth factor if outcome i occurs:
+            # W_i = 1 + f_i * b_i - sum_{j != i} f_j
+            gain = 1.0 + f[i] * b[i] - (total_f - f[i])
+            if gain <= 0:
+                return 1e6  # log undefined -> large penalty
+            expected_log += probs[i] * np.log(gain)
+        return -expected_log
+
+    constraints = ({
+        "type": "ineq",
+        "fun": lambda f: 1.0 - np.sum(f)  # sum(f) <= 1
+    },)
+
+    bounds = [(0.0, 1.0)] * 3
+    x0 = np.zeros(3)
+
+    result = minimize(
+        neg_expected_log_growth,
+        x0,
+        method="SLSQP",
+        bounds=bounds,
+        constraints=constraints
+    )
+
+    if not result.success:
+        return np.zeros(3)
+
+    f_opt = np.maximum(result.x, 0.0)
+    f_opt[f_opt < 1e-6] = 0.0  # clean tiny negatives
+    return f_opt
 
 
 def scaled_stake(kelly_full, bankroll, frac, max_pct):
@@ -1080,10 +1147,10 @@ with st.spinner("Generating predictions..."):
             "Double-check the odds inputs."
         )
 
-    # Kelly fraction calculations (full Kelly)
-    kelly_home = kelly_fraction(dc_adj["P_home"], odds_home)
-    kelly_draw = kelly_fraction(dc_adj["P_draw"], odds_draw)
-    kelly_away = kelly_fraction(dc_adj["P_away"], odds_away)
+    # Proper 3-way Kelly optimisation across Home/Draw/Away
+    probs_vector = np.array([dc_adj["P_home"], dc_adj["P_draw"], dc_adj["P_away"]])
+    odds_vector = np.array([odds_home, odds_draw, odds_away])
+    kelly_home, kelly_draw, kelly_away = kelly_3way(probs_vector, odds_vector)
 
     # Kelly bet amounts in £ with fractional Kelly and cap
     stake_home = scaled_stake(kelly_home, bankroll, kelly_fraction_user, max_stake_pct)
@@ -1345,7 +1412,7 @@ kelly_df = pd.DataFrame({
         f"{edge_draw * 100:+.2f}%",
         f"{edge_away * 100:+.2f}%"
     ],
-    "Full Kelly % of Bankroll": [
+    "Full Kelly % of Bankroll (3-way)": [
         f"{max(0, kelly_home) * 100:.2f}%",
         f"{max(0, kelly_draw) * 100:.2f}%",
         f"{max(0, kelly_away) * 100:.2f}%"
@@ -1369,7 +1436,7 @@ best_index = np.argmax([stake_home, stake_draw, stake_away])
 best_side = ["Home", "Draw", "Away"][best_index]
 
 if best_stake > 0:
-    st.success(f"Recommended Bet: **{best_side}** — £{best_stake:.2f} (fractional Kelly with caps)")
+    st.success(f"Recommended Bet: **{best_side}** — £{best_stake:.2f} (3-way fractional Kelly with caps)")
 else:
     st.warning("Kelly suggests NO BET on this match.")
 
