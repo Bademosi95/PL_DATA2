@@ -41,17 +41,15 @@ def scaled_stake(kelly_full, bankroll, frac, max_pct):
 
 
 def get_model_update_version():
-    """Return metadata.json timestamp OR file modified time to bust cache."""
-    metadata_file = Path("metadata.json")
-    if metadata_file.exists():
-        try:
-            with open(metadata_file, "r") as f:
+    """Return update timestamp from metadata.json to bust Streamlit cache."""
+    try:
+        if Path("metadata.json").exists():
+            with open("metadata.json", "r") as f:
                 metadata = json.load(f)
-            return metadata.get("update_time") or str(metadata_file.stat().st_mtime)
-        except:
-            return str(metadata_file.stat().st_mtime)
-    else:
-        return str(datetime.utcnow())
+                return metadata.get("update_time", "0")
+    except Exception:
+        pass
+    return str(datetime.utcnow())
 
 # ═══════════════════════════════════════════════════════════════════
 # PAGE CONFIGURATION
@@ -368,7 +366,6 @@ st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 # LOAD MODELS & DATA WITH VALIDATION
 # ═══════════════════════════════════════════════════════════════════
 
-@st.cache_resource
 def load_models(_version):
     """Load all pickled models and data with comprehensive error handling"""
     required_files = {
@@ -467,7 +464,7 @@ def load_models(_version):
 
 
 # Load all models
-models = load_models(get_model_update_version())
+models = load_models(None)
 
 pipe_result_final = models["pipe_result"]
 poisson_model = models["poisson_model"]
