@@ -605,7 +605,7 @@ def build_feature_vector(home_team, away_team):
     }
 
     # Return DataFrame with correct column order
-    return pd.DataFrame([features])[feature_cols]
+    return pd.DataFrame([features]).reindex(columns=feature_cols, fill_value=0.0)
 
 
 def predict_logistic(home_team, away_team):
