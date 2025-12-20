@@ -15,6 +15,7 @@ import pandas as pd
 import numpy as np
 import pickle
 from scipy.stats import poisson
+from scipy.optimize import minimize
 from pathlib import Path
 from datetime import datetime, timezone
 import json
@@ -39,16 +40,67 @@ def scaled_stake(kelly_full, bankroll, frac, max_pct):
     cap = max_pct * bankroll
     return min(raw, cap)
 
+def kelly_3way(probs, odds):
+    """
+    Proper Kelly optimisation for a 3-way mutually exclusive market (H/D/A).
+    Returns optimal fractions for Home/Draw/Away with constraints:
+    - f_i >= 0
+    - sum(f_i) <= 1
+    """
+    probs = np.asarray(probs, dtype=float)
+    odds = np.asarray(odds, dtype=float)
+    b = odds - 1.0  # net returns
+
+    if probs.shape[0] != 3 or odds.shape[0] != 3:
+        return np.zeros(3)
+    if np.any(probs < 0) or np.any(odds <= 1.0) or probs.sum() <= 0:
+        return np.zeros(3)
+
+    probs = probs / probs.sum()
+
+    def neg_expected_log_growth(f):
+        f = np.asarray(f, dtype=float)
+        total = float(f.sum())
+        if total > 1.0 + 1e-9 or np.any(f < -1e-9):
+            return 1e6
+
+        exp_log = 0.0
+        for i in range(3):
+            wealth = 1.0 + f[i] * b[i] - (total - f[i])
+            if wealth <= 0:
+                return 1e6
+            exp_log += probs[i] * np.log(wealth)
+        return -exp_log
+
+    constraints = ({"type": "ineq", "fun": lambda f: 1.0 - np.sum(f)},)
+    bounds = [(0.0, 1.0), (0.0, 1.0), (0.0, 1.0)]
+    x0 = np.zeros(3)
+
+    res = minimize(
+        neg_expected_log_growth,
+        x0,
+        method="SLSQP",
+        bounds=bounds,
+        constraints=constraints,
+    )
+    if not res.success:
+        return np.zeros(3)
+
+    f_opt = np.maximum(res.x, 0.0)
+    f_opt[f_opt < 1e-6] = 0.0
+    return f_opt
+
 
 def get_model_update_version():
-    """Return update timestamp from metadata.json to bust Streamlit cache."""
-    try:
-        if Path("metadata.json").exists():
-            with open("metadata.json", "r") as f:
+    """Return metadata.json update_time or file modified time to bust Streamlit cache."""
+    metadata_file = Path("metadata.json")
+    if metadata_file.exists():
+        try:
+            with open(metadata_file, "r") as f:
                 metadata = json.load(f)
-                return metadata.get("update_time", "0")
-    except Exception:
-        pass
+            return metadata.get("update_time") or str(metadata_file.stat().st_mtime)
+        except Exception:
+            return str(metadata_file.stat().st_mtime)
     return str(datetime.utcnow())
 
 # ═══════════════════════════════════════════════════════════════════
@@ -366,6 +418,7 @@ st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 # LOAD MODELS & DATA WITH VALIDATION
 # ═══════════════════════════════════════════════════════════════════
 
+@st.cache_resource
 def load_models(_version):
     """Load all pickled models and data with comprehensive error handling"""
     required_files = {
@@ -440,11 +493,20 @@ def load_models(_version):
             "rolling_xg_against", "rolling_GD",
             "rolling_finishing_overperf", "rolling_def_overperf"
         ]
+        # Optional columns introduced by enhanced weekly_update.py
+        optional_long_cols = ["rolling_xg_for_var", "rolling_xg_against_var"]
         missing_cols = [col for col in required_long_cols if col not in long_df.columns]
+missing_optional = [col for col in optional_long_cols if col not in long_df.columns]
 
-        if missing_cols:
-            st.error(f"❌ long_df missing required columns: {missing_cols}")
-            st.stop()
+if missing_cols:
+    st.error(f"❌ long_df missing required columns: {missing_cols}")
+    st.stop()
+
+if missing_optional:
+    st.warning(
+        f"ℹ️ long_df is missing optional columns (draw/volatility features): {missing_optional}. "
+        "Logistic will still run if the trained model doesn't require them."
+    )
 
         return {
             "pipe_result": pipe_result,
@@ -464,7 +526,7 @@ def load_models(_version):
 
 
 # Load all models
-models = load_models(None)
+models = load_models(get_model_update_version())
 
 pipe_result_final = models["pipe_result"]
 poisson_model = models["poisson_model"]
@@ -552,80 +614,112 @@ def get_team_strength_metrics(team):
 
 def build_feature_vector(home_team, away_team):
     """
-    Build feature vector for logistic regression.
-    Must match exact feature engineering from weekly_update.py.
-    """
-    def _rolling_or_fallback(val, fallback=0.0):
-        # Explicitly convert None (no data) to numerical fallback
-        return fallback if val is None else val
+    Build feature vector for the logistic regression pipeline.
 
-    # Get strength metrics
+    Robust to enhancements in weekly_update.py:
+    - computes a superset of features
+    - returns in the exact order from feature_cols.pkl
+    - fills any missing required columns with 0.0
+    """
+    def _num(val, fallback=0.0):
+        return fallback if val is None else float(val)
+
     home_strength = get_team_strength_metrics(home_team)
     away_strength = get_team_strength_metrics(away_team)
-
     if home_strength is None or away_strength is None:
         return None
 
-    # Get rolling form metrics (last 5 matches)
-    home_rolling = {
+    home_roll = {
         "points": get_latest_team_stat(home_team, "rolling_points"),
         "xg_for": get_latest_team_stat(home_team, "rolling_xg_for"),
         "xg_against": get_latest_team_stat(home_team, "rolling_xg_against"),
         "GD": get_latest_team_stat(home_team, "rolling_GD"),
-        "finishing_overperf": get_latest_team_stat(home_team, "rolling_finishing_overperf"),
-        "def_overperf": get_latest_team_stat(home_team, "rolling_def_overperf")
+        "fin_over": get_latest_team_stat(home_team, "rolling_finishing_overperf"),
+        "def_over": get_latest_team_stat(home_team, "rolling_def_overperf"),
+        "xg_for_var": get_latest_team_stat(home_team, "rolling_xg_for_var"),
+        "xg_against_var": get_latest_team_stat(home_team, "rolling_xg_against_var"),
     }
-
-    away_rolling = {
+    away_roll = {
         "points": get_latest_team_stat(away_team, "rolling_points"),
         "xg_for": get_latest_team_stat(away_team, "rolling_xg_for"),
         "xg_against": get_latest_team_stat(away_team, "rolling_xg_against"),
         "GD": get_latest_team_stat(away_team, "rolling_GD"),
-        "finishing_overperf": get_latest_team_stat(away_team, "rolling_finishing_overperf"),
-        "def_overperf": get_latest_team_stat(away_team, "rolling_def_overperf")
+        "fin_over": get_latest_team_stat(away_team, "rolling_finishing_overperf"),
+        "def_over": get_latest_team_stat(away_team, "rolling_def_overperf"),
+        "xg_for_var": get_latest_team_stat(away_team, "rolling_xg_for_var"),
+        "xg_against_var": get_latest_team_stat(away_team, "rolling_xg_against_var"),
     }
 
-    # Build features matching training exactly, with explicit fallbacks
-    features = {
-        "strength_diff": home_strength["att_home"] - away_strength["att_away"],
-        "defense_diff": away_strength["def_away"] - home_strength["def_home"],
-        "rolling_points_diff": _rolling_or_fallback(home_rolling["points"])
-        - _rolling_or_fallback(away_rolling["points"]),
-        "rolling_xG_diff": _rolling_or_fallback(home_rolling["xg_for"])
-        - _rolling_or_fallback(away_rolling["xg_for"]),
-        "rolling_xGA_diff": _rolling_or_fallback(home_rolling["xg_against"])
-        - _rolling_or_fallback(away_rolling["xg_against"]),
-        "rolling_GD_diff": _rolling_or_fallback(home_rolling["GD"])
-        - _rolling_or_fallback(away_rolling["GD"]),
-        "finishing_overperf_diff": _rolling_or_fallback(home_rolling["finishing_overperf"])
-        - _rolling_or_fallback(away_rolling["finishing_overperf"]),
-        "def_overperf_diff": _rolling_or_fallback(home_rolling["def_overperf"])
-        - _rolling_or_fallback(away_rolling["def_overperf"])
+    strength_diff = home_strength["att_home"] - away_strength["att_away"]
+    defense_diff = away_strength["def_away"] - home_strength["def_home"]
+
+    rolling_points_diff = _num(home_roll["points"]) - _num(away_roll["points"])
+    rolling_xG_diff = _num(home_roll["xg_for"]) - _num(away_roll["xg_for"])
+    rolling_xGA_diff = _num(home_roll["xg_against"]) - _num(away_roll["xg_against"])
+    rolling_GD_diff = _num(home_roll["GD"]) - _num(away_roll["GD"])
+    finishing_overperf_diff = _num(home_roll["fin_over"]) - _num(away_roll["fin_over"])
+    def_overperf_diff = _num(home_roll["def_over"]) - _num(away_roll["def_over"])
+
+    # Draw-oriented / similarity features
+    abs_strength_diff = abs(strength_diff)
+    abs_defense_diff = abs(defense_diff)
+    abs_rolling_xG_diff = abs(rolling_xG_diff)
+    abs_rolling_GD_diff = abs(rolling_GD_diff)
+
+    # Volatility aggregates (sums)
+    xg_var_sum = _num(home_roll["xg_for_var"]) + _num(away_roll["xg_for_var"])
+    xga_var_sum = _num(home_roll["xg_against_var"]) + _num(away_roll["xg_against_var"])
+
+    features_all = {
+        "strength_diff": strength_diff,
+        "defense_diff": defense_diff,
+        "rolling_points_diff": rolling_points_diff,
+        "rolling_xG_diff": rolling_xG_diff,
+        "rolling_xGA_diff": rolling_xGA_diff,
+        "rolling_GD_diff": rolling_GD_diff,
+        "finishing_overperf_diff": finishing_overperf_diff,
+        "def_overperf_diff": def_overperf_diff,
+        "abs_strength_diff": abs_strength_diff,
+        "abs_defense_diff": abs_defense_diff,
+        "abs_rolling_xG_diff": abs_rolling_xG_diff,
+        "abs_rolling_GD_diff": abs_rolling_GD_diff,
+        "xg_var_sum": xg_var_sum,
+        "xga_var_sum": xga_var_sum,
     }
 
-    # Return DataFrame with correct column order
-    return pd.DataFrame([features])[feature_cols]
+    X = pd.DataFrame([features_all])
+    missing = [c for c in feature_cols if c not in X.columns]
+    for c in missing:
+        X[c] = 0.0
+
+    return X[feature_cols]
 
 
 def predict_logistic(home_team, away_team):
-    """Get logistic regression predictions (H/D/A probabilities)"""
+    """Get logistic regression predictions (H/D/A probabilities). Handles calibrated wrappers."""
     try:
         X = build_feature_vector(home_team, away_team)
-
         if X is None:
             return None
 
         probs = pipe_result_final.predict_proba(X)[0]
-        classes = pipe_result_final.classes_
+
+        if hasattr(pipe_result_final, "classes_"):
+            classes = list(pipe_result_final.classes_)
+        elif hasattr(pipe_result_final, "base_model") and hasattr(pipe_result_final.base_model, "classes_"):
+            classes = list(pipe_result_final.base_model.classes_)
+        else:
+            classes = ["H", "D", "A"]
+
+        if len(classes) != len(probs):
+            classes = ["H", "D", "A"][: len(probs)]
 
         return dict(zip(classes, probs))
-
     except Exception as e:
         st.error(f"Logistic prediction error: {e}")
         return None
 
-
-def get_poisson_lambdas(home_team, away_team, context_adj=0.0):
+ef get_poisson_lambdas(home_team, away_team, context_adj=0.0):
     """
     Get expected goals from Poisson model with optional context adjustment.
 
@@ -1079,10 +1173,10 @@ with st.spinner("Generating predictions..."):
             "Double-check the odds inputs."
         )
 
-    # Kelly fraction calculations (full Kelly)
-    kelly_home = kelly_fraction(dc_adj["P_home"], odds_home)
-    kelly_draw = kelly_fraction(dc_adj["P_draw"], odds_draw)
-    kelly_away = kelly_fraction(dc_adj["P_away"], odds_away)
+    # Proper 3-way Kelly optimisation (jointly allocates across Home/Draw/Away)
+probs_vec = np.array([dc_adj["P_home"], dc_adj["P_draw"], dc_adj["P_away"]], dtype=float)
+odds_vec = np.array([odds_home, odds_draw, odds_away], dtype=float)
+kelly_home, kelly_draw, kelly_away = kelly_3way(probs_vec, odds_vec)
 
     # Kelly bet amounts in £ with fractional Kelly and cap
     stake_home = scaled_stake(kelly_home, bankroll, kelly_fraction_user, max_stake_pct)
@@ -1344,7 +1438,7 @@ kelly_df = pd.DataFrame({
         f"{edge_draw * 100:+.2f}%",
         f"{edge_away * 100:+.2f}%"
     ],
-    "Full Kelly % of Bankroll": [
+    "Full Kelly % of Bankroll (3-way)": [
         f"{max(0, kelly_home) * 100:.2f}%",
         f"{max(0, kelly_draw) * 100:.2f}%",
         f"{max(0, kelly_away) * 100:.2f}%"
@@ -1368,7 +1462,7 @@ best_index = np.argmax([stake_home, stake_draw, stake_away])
 best_side = ["Home", "Draw", "Away"][best_index]
 
 if best_stake > 0:
-    st.success(f"Recommended Bet: **{best_side}** — £{best_stake:.2f} (fractional Kelly with caps)")
+    st.success(f"Recommended Bet: **{best_side}** — £{best_stake:.2f} (3-way fractional Kelly with caps)")
 else:
     st.warning("Kelly suggests NO BET on this match.")
 
