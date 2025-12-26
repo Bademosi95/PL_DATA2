@@ -18,7 +18,6 @@ from scipy.stats import poisson
 from pathlib import Path
 from datetime import datetime
 import json
-import difflib
 
 def kelly_fraction(prob, odds):
     b = odds - 1
@@ -746,46 +745,6 @@ with st.sidebar:
     
     # Team selection
     teams = sorted(stats["Squad"].unique())
-
-def _resolve_team_name(name: str, valid_teams):
-    """Best-effort resolver to map fixture CSV names to model team names."""
-    if name is None:
-        return None
-    n = str(name).strip()
-    if n in valid_teams:
-        return n
-
-    # common normalisations
-    repl = {
-        "Man United": "Manchester United",
-        "Man Utd": "Manchester United",
-        "Manchester Utd": "Manchester United",
-        "Man City": "Manchester City",
-        "Spurs": "Tottenham",
-        "Tottenham Hotspur": "Tottenham",
-        "Wolves": "Wolverhampton Wanderers",
-        "Newcastle Utd": "Newcastle United",
-        "Leicester City": "Leicester",
-        "Nott'm Forest": "Nottingham Forest",
-        "Notts Forest": "Nottingham Forest",
-        "Sheff Utd": "Sheffield United",
-        "Sheffield Utd": "Sheffield United",
-        "West Brom": "West Bromwich Albion",
-        "Brighton": "Brighton and Hove Albion",
-    }
-    if n in repl and repl[n] in valid_teams:
-        return repl[n]
-
-    # strip punctuation variants
-    n2 = n.replace("&", "and").replace("’", "'").replace(".", "")
-    if n2 in valid_teams:
-        return n2
-
-    # fuzzy match
-    matches = difflib.get_close_matches(n, valid_teams, n=1, cutoff=0.6)
-    return matches[0] if matches else None
-
-
     
     if len(teams) == 0:
         st.error("No teams found in stats file!")
@@ -793,6 +752,12 @@ def _resolve_team_name(name: str, valid_teams):
     
     home_team = st.selectbox("🏠 Home Team", teams, key="home")
     away_team = st.selectbox("✈️  Away Team", teams, key="away")
+
+    # Safety: prevent identical home/away selection
+    if home_team == away_team:
+        st.warning("Please select two different teams.")
+        return
+
     
     st.markdown("---")
     st.subheader("📈 Market Odds (Manual Entry)")
