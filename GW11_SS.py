@@ -41,15 +41,54 @@ def scaled_stake(kelly_full, bankroll, frac, max_pct):
 
 
 def get_model_update_version():
-    """Return update timestamp from metadata.json to bust Streamlit cache."""
+    """
+    Robust cache-buster for Streamlit.
+
+    Uses:
+    - metadata.json update_time (if present)
+    - file modified times of all model artefacts
+    - a small hash so even rapid successive writes bust cache reliably
+    """
+    import hashlib
+
+    artefacts = [
+        "metadata.json",
+        "pipe_result_final.pkl",
+        "poisson_model.pkl",
+        "long_df.pkl",
+        "stats.pkl",
+        "rho_hat.pkl",
+        "feature_cols.pkl",
+    ]
+
+    parts = []
+
+    # Prefer explicit update_time if available
     try:
-        if Path("metadata.json").exists():
-            with open("metadata.json", "r") as f:
-                metadata = json.load(f)
-                return metadata.get("update_time", "0")
+        mf = Path("metadata.json")
+        if mf.exists():
+            with open(mf, "r") as f:
+                md = json.load(f)
+            ut = md.get("update_time")
+            if ut:
+                parts.append(f"ut={ut}")
+            parts.append(f"meta_mtime={mf.stat().st_mtime}")
     except Exception:
         pass
-    return str(datetime.utcnow())
+
+    # Add mtimes of artefacts (bust cache even if update_time didn't change)
+    for fn in artefacts:
+        try:
+            p = Path(fn)
+            if p.exists():
+                parts.append(f"{fn}:{p.stat().st_mtime}")
+            else:
+                parts.append(f"{fn}:missing")
+        except Exception:
+            parts.append(f"{fn}:err")
+
+    raw = "|".join(parts).encode("utf-8")
+    return hashlib.sha1(raw).hexdigest()
 
 # ═══════════════════════════════════════════════════════════════════
 # PAGE CONFIGURATION
@@ -828,6 +867,18 @@ def render_data_freshness_banner(metadata_dict):
 
 with st.sidebar:
     st.header("⚽ Match Setup")
+
+
+    # Force refresh (clears Streamlit resource cache and reruns)
+    if st.button("🔄 Force refresh data"):
+        try:
+            st.cache_resource.clear()
+        except Exception:
+            try:
+                load_models.clear()
+            except Exception:
+                pass
+        st.rerun()
 
     # Team selection
     teams = sorted(stats["Squad"].unique())
