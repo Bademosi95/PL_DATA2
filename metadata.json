@@ -1,7 +1,7 @@
 {
-  "update_time": "2025-12-29T18:05:39.975451",
-  "n_matches": 180,
-  "date_range": "2025-08-15 to 2025-12-28",
+  "update_time": "2026-01-03T14:39:56.284386",
+  "n_matches": 190,
+  "date_range": "2025-08-15 to 2026-01-01",
   "teams": [
     "Arsenal",
     "Aston Villa",
@@ -26,5 +26,5 @@
   ],
   "rolling_window": 5,
   "dc_years_back": 3,
-  "rho": 0.09129058006246821
+  "rho": 0.011814674331098321
 }
