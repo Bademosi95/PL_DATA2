@@ -1,7 +1,7 @@
 {
-  "update_time": "2026-01-03T14:50:04.561345",
-  "n_matches": 190,
-  "date_range": "2025-08-15 to 2026-01-01",
+  "update_time": "2026-01-17T10:46:04.118552",
+  "n_matches": 210,
+  "date_range": "2025-08-15 to 2026-01-08",
   "teams": [
     "Arsenal",
     "Aston Villa",
@@ -17,14 +17,14 @@
     "Liverpool",
     "Manchester City",
     "Manchester Utd",
-    "Newcastle Utd",
-    "Nott'ham Forest",
+    "Newcastle United",
+    "Nottingham Forest",
     "Sunderland",
-    "Tottenham",
-    "West Ham",
+    "Tottenham Hotspur",
+    "West Ham United",
     "Wolves"
   ],
   "rolling_window": 5,
   "dc_years_back": 3,
-  "rho": 0.011814674331098321
+  "rho": -0.046325983479973354
 }
